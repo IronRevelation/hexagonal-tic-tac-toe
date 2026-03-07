@@ -310,6 +310,12 @@ function GamePage() {
   const winnerLabel = winnerSlot ? describePlayer(game, winnerSlot) : null
   const summaryLabel = game.mode === 'private' ? 'Private Room' : 'Live Match'
   const privateRoomLink = game.roomCode ? buildShareLink(game.roomCode) : null
+  const canDeleteRoom =
+    game.canDeleteRoom ||
+    (game.mode === 'private' &&
+      waitingForOpponent &&
+      game.viewerRole === 'playerOne' &&
+      game.playerTwoGuestId === null)
   const viewerSlot =
     game.viewerRole === 'playerOne' ? 'one' : game.viewerRole === 'playerTwo' ? 'two' : null
   const opponentSlot =
@@ -407,7 +413,7 @@ function GamePage() {
                   onClick={() => void handleCopyShareLink()}
                   type="button"
                 >
-                  <span className="inline-flex items-center justify-center gap-[0.35rem]">
+                  <span className="inline-flex min-w-[4.9rem] items-center justify-start gap-[0.35rem]">
                     {copiedShareLink ? (
                       <Check size={13} strokeWidth={2.5} />
                     ) : (
@@ -416,14 +422,16 @@ function GamePage() {
                     {copiedShareLink ? 'Copied' : 'Copy link'}
                   </span>
                 </button>
-                {game.canDeleteRoom ? (
+                {canDeleteRoom ? (
                   <button
                     className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[rgba(214,118,95,0.22)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[#d98d79]"
                     onClick={() => setIsConfirmingDeleteRoom(true)}
                     type="button"
                   >
-                    <Trash2 size={13} strokeWidth={2.2} />
-                    Delete
+                    <span className="inline-flex min-w-[4.9rem] items-center justify-start gap-[0.35rem]">
+                      <Trash2 size={13} strokeWidth={2.2} />
+                      Delete
+                    </span>
                   </button>
                 ) : null}
               </div>

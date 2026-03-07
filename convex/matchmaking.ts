@@ -5,6 +5,7 @@ import {
   buildGuestSession,
   chooseOpeningOrder,
   createStoredInitialState,
+  findAvailableMatchmakingOpponent,
   findActivePlayerGameParticipant,
   getGuestByToken,
   getQueueEntry,
@@ -22,7 +23,13 @@ export const join = mutation({
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
     const existingPlayerGame = await findActivePlayerGameParticipant(ctx.db, guest._id)
+    const existingQueueEntry = await getQueueEntry(ctx.db, guest._id)
+
     if (existingPlayerGame) {
+      if (existingQueueEntry) {
+        await ctx.db.delete(existingQueueEntry._id)
+      }
+
       return {
         state: 'matched',
         gameId: existingPlayerGame.game._id,
@@ -30,14 +37,13 @@ export const join = mutation({
     }
 
     await assertCanJoinAsPlayer(ctx.db, guest._id)
-
-    const existingQueueEntry = await getQueueEntry(ctx.db, guest._id)
-    const availableOpponent = (
-      await ctx.db
-        .query('matchmakingQueue')
-        .withIndex('by_queuedAt')
-        .collect()
-    ).find((entry) => entry.guestId !== guest._id)
+    const availableOpponent = await findAvailableMatchmakingOpponent(
+      ctx.db,
+      guest._id,
+      async (entry) => {
+        await ctx.db.delete(entry._id)
+      },
+    )
 
     if (!availableOpponent) {
       if (existingQueueEntry) {

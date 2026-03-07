@@ -63,6 +63,7 @@ function LobbyPage() {
   const activeGameId = session?.activeGameId ?? null
   const hasActiveGame = activeGameId !== null
   const isQueued = matchmakingStatus?.state === 'queued'
+  const canCreatePrivateRoom = !isQueued && !isAlreadyPlaying
 
   async function handleJoinMatchmaking() {
     if (!guestToken) {
@@ -221,7 +222,7 @@ function LobbyPage() {
 
           <button
             className={secondaryButton}
-            disabled={pendingAction !== null || isAlreadyPlaying}
+            disabled={pendingAction !== null || !canCreatePrivateRoom}
             onClick={() => void handleCreatePrivateGame()}
             type="button"
           >
@@ -258,6 +259,10 @@ function LobbyPage() {
           {isAlreadyPlaying ? (
             <p className={`${mutedCopy} mt-1 mb-0`}>
               Finish or resume your current player game before starting another.
+            </p>
+          ) : isQueued ? (
+            <p className={`${mutedCopy} mt-1 mb-0`}>
+              Cancel matchmaking before creating a private room.
             </p>
           ) : null}
         </div>

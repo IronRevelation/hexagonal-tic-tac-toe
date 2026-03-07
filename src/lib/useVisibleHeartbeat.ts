@@ -76,19 +76,26 @@ export function bindVisibleHeartbeat({
     intervalId = setIntervalFn(ping, HEARTBEAT_MS)
   }
 
-  const handleVisibilityChange = () => {
+  const syncWithVisibility = () => {
     if (getVisibilityState() === 'visible') {
-      ping()
+      start()
+      return
     }
+
+    stop()
+  }
+
+  const handleVisibilityChange = () => {
+    syncWithVisibility()
   }
 
   const handleFocus = () => {
     if (getVisibilityState() === 'visible') {
-      ping()
+      start()
     }
   }
 
-  start()
+  syncWithVisibility()
   addWindowListener('focus', handleFocus)
   addDocumentListener('visibilitychange', handleVisibilityChange)
 

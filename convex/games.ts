@@ -410,6 +410,7 @@ export const requestRematch = mutation({
       nextGameId,
       rematchRequestedByPlayerOne: true,
       rematchRequestedByPlayerTwo: true,
+      roomCode: game.mode === 'private' ? undefined : game.roomCode,
       updatedAt: timestamp,
     })
 

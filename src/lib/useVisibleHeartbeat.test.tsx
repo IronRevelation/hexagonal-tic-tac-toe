@@ -24,7 +24,7 @@ describe('useVisibleHeartbeat', () => {
     visibilityState = 'visible'
   })
 
-  it('keeps sending heartbeats while mounted and pings again when the tab becomes visible', () => {
+  it('sends heartbeats only while visible and restarts when the tab becomes visible again', () => {
     cleanup = bindVisibleHeartbeat({
       heartbeat: heartbeatSpy,
       getVisibilityState: () => visibilityState,
@@ -44,13 +44,16 @@ describe('useVisibleHeartbeat', () => {
     visibilityState = 'hidden'
     document.dispatchEvent(new Event('visibilitychange'))
     vi.advanceTimersByTime(20_000)
-    expect(heartbeatSpy).toHaveBeenCalledTimes(4)
+    expect(heartbeatSpy).toHaveBeenCalledTimes(2)
 
     visibilityState = 'visible'
     document.dispatchEvent(new Event('visibilitychange'))
-    expect(heartbeatSpy).toHaveBeenCalledTimes(5)
+    expect(heartbeatSpy).toHaveBeenCalledTimes(3)
+
+    vi.advanceTimersByTime(10_000)
+    expect(heartbeatSpy).toHaveBeenCalledTimes(4)
 
     window.dispatchEvent(new Event('focus'))
-    expect(heartbeatSpy).toHaveBeenCalledTimes(6)
+    expect(heartbeatSpy).toHaveBeenCalledTimes(5)
   })
 })

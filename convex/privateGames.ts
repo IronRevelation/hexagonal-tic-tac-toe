@@ -2,9 +2,11 @@ import { v } from 'convex/values'
 import { mutation } from './_generated/server'
 import {
   assertCanJoinAsPlayer,
+  canCreatePrivateRoom,
   canDeletePrivateRoom,
   createStoredInitialState,
   createUniqueRoomCode,
+  getQueueEntry,
   getParticipant,
   isPlayerParticipant,
   listParticipants,
@@ -22,6 +24,14 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
     await assertCanJoinAsPlayer(ctx.db, guest._id)
+    const queueEntry = await getQueueEntry(ctx.db, guest._id)
+
+    if (!canCreatePrivateRoom(Boolean(queueEntry))) {
+      throwGameError(
+        'MATCHMAKING_ACTIVE',
+        'Cancel matchmaking before creating a private room.',
+      )
+    }
 
     const timestamp = now()
     const gameId = await ctx.db.insert('games', {
@@ -99,6 +109,11 @@ export const join = mutation({
 
     if (playerParticipants.length < 2) {
       await assertCanJoinAsPlayer(ctx.db, guest._id, game._id)
+      const queueEntry = await getQueueEntry(ctx.db, guest._id)
+      if (queueEntry) {
+        await ctx.db.delete(queueEntry._id)
+      }
+
       const creator = playerParticipants[0]
       if (!creator) {
         throw new Error('Private room is missing its creator participant.')

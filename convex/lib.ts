@@ -192,6 +192,33 @@ export async function getQueueEntry(
     .unique()
 }
 
+export async function findAvailableMatchmakingOpponent(
+  db: DatabaseReader | DatabaseWriter,
+  currentGuestId: Id<'guests'>,
+  onStaleQueueEntry?: (entry: Doc<'matchmakingQueue'>) => Promise<void>,
+) {
+  const queuedEntries = await db
+    .query('matchmakingQueue')
+    .withIndex('by_queuedAt')
+    .collect()
+
+  for (const entry of queuedEntries) {
+    if (entry.guestId === currentGuestId) {
+      continue
+    }
+
+    const activeGame = await findActivePlayerGameParticipant(db, entry.guestId)
+    if (activeGame) {
+      await onStaleQueueEntry?.(entry)
+      continue
+    }
+
+    return entry
+  }
+
+  return null
+}
+
 export async function findActivePlayerGameParticipant(
   db: DatabaseReader | DatabaseWriter,
   guestId: Id<'guests'>,
@@ -480,10 +507,15 @@ export function canDeletePrivateRoom(
   )
 }
 
+export function canCreatePrivateRoom(isQueuedForMatchmaking: boolean) {
+  return !isQueuedForMatchmaking
+}
+
 export function throwGameError(
   code:
     | 'GAME_NOT_FOUND'
     | 'ROOM_FULL'
+    | 'ROOM_DELETE_NOT_ALLOWED'
     | 'NOT_A_PLAYER'
     | 'NOT_YOUR_TURN'
     | 'CELL_OCCUPIED'
@@ -494,7 +526,8 @@ export function throwGameError(
     | 'DRAW_NOT_ALLOWED'
     | 'DRAW_ALREADY_PENDING'
     | 'DRAW_NOT_PENDING'
-    | 'INVALID_COORD',
+    | 'INVALID_COORD'
+    | 'MATCHMAKING_ACTIVE',
   message: string,
 ): never {
   throw new ConvexError({ code, message })

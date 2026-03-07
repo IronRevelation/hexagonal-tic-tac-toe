@@ -21,6 +21,7 @@ function GamePage() {
   const [moveError, setMoveError] = useState<string | null>(null)
   const [isSubmittingMove, setIsSubmittingMove] = useState(false)
   const [isUpdatingRematch, setIsUpdatingRematch] = useState(false)
+  const [isLeavingGame, setIsLeavingGame] = useState(false)
   const game = useQuery(
     api.games.byIdForGuest,
     guestToken ? { guestToken, gameId: asGameId(gameId) } : 'skip',
@@ -28,6 +29,7 @@ function GamePage() {
   const placeMove = useMutation(api.games.placeMove)
   const requestRematch = useMutation(api.games.requestRematch)
   const cancelRematch = useMutation(api.games.cancelRematch)
+  const leaveFinishedGame = useMutation(api.guests.leaveFinishedGame)
 
   useVisibleHeartbeat(guestToken, gameId)
 
@@ -92,6 +94,26 @@ function GamePage() {
     }
   }
 
+  async function handleLeaveGame() {
+    if (!guestToken) {
+      void navigate({ to: '/' })
+      return
+    }
+
+    setIsLeavingGame(true)
+
+    try {
+      if (game?.status === 'finished') {
+        await leaveFinishedGame({
+          guestToken,
+          gameId: asGameId(gameId),
+        })
+      }
+    } finally {
+      void navigate({ to: '/' })
+    }
+  }
+
   if (isGuestLoading || game === undefined) {
     return (
       <main className="page-wrap px-4 py-16">
@@ -125,11 +147,22 @@ function GamePage() {
   const currentPlayerLabel = describePlayer(game, currentPlayer)
   const winnerLabel = game.state.winner ? describePlayer(game, game.state.winner) : null
   const summaryLabel = game.mode === 'private' ? 'Private Room' : 'Live Match'
+  const viewerSlot =
+    game.viewerRole === 'playerOne' ? 'one' : game.viewerRole === 'playerTwo' ? 'two' : null
+  const opponentSlot =
+    viewerSlot === 'one' ? 'two' : viewerSlot === 'two' ? 'one' : null
+  const opponentPresence = opponentSlot ? game.players[opponentSlot] : null
   const viewerRematchRequested =
     (game.viewerRole === 'playerOne' && game.rematch.requestedByPlayerOne) ||
     (game.viewerRole === 'playerTwo' && game.rematch.requestedByPlayerTwo)
   const rematchReadyCount =
     Number(game.rematch.requestedByPlayerOne) + Number(game.rematch.requestedByPlayerTwo)
+  const opponentLeft =
+    game.status === 'finished' &&
+    viewerIsPlayer &&
+    opponentPresence !== null &&
+    !opponentPresence.isOnline &&
+    !game.nextGameId
 
   return (
     <main className="game-page px-4 py-3">
@@ -205,55 +238,6 @@ function GamePage() {
           </section>
         ) : null}
 
-        {game.status === 'finished' ? (
-          <section className="game-utility-card">
-            <div className="game-utility-header">
-              <span className="game-utility-label">Rematch</span>
-              <span className="game-chip">{rematchReadyCount}/2 ready</span>
-            </div>
-            <p className="game-utility-copy">
-              {game.nextGameId
-                ? 'Next round is loading.'
-                : viewerIsPlayer
-                  ? 'Opt in when you are ready.'
-                  : 'Waiting for both players to opt in.'}
-            </p>
-
-            <div className="rematch-status-row">
-              <span className="rematch-status">
-                <span
-                  className={`status-dot ${
-                    game.rematch.requestedByPlayerOne ? 'is-live' : 'is-idle'
-                  }`}
-                />
-                {game.players.one?.displayName ?? 'Player 1'}
-              </span>
-              <span className="rematch-status">
-                <span
-                  className={`status-dot ${
-                    game.rematch.requestedByPlayerTwo ? 'is-live' : 'is-idle'
-                  }`}
-                />
-                {game.players.two?.displayName ?? 'Player 2'}
-              </span>
-            </div>
-
-            {viewerIsPlayer && !game.nextGameId ? (
-              <button
-                className="primary-button"
-                disabled={isUpdatingRematch}
-                onClick={() => void handleRematchToggle()}
-                type="button"
-              >
-                {isUpdatingRematch
-                  ? 'Updating…'
-                  : viewerRematchRequested
-                    ? 'Cancel rematch'
-                    : 'Request rematch'}
-              </button>
-            ) : null}
-          </section>
-        ) : null}
       </section>
 
       {moveError ? <section className="surface-panel error-panel">{moveError}</section> : null}
@@ -264,6 +248,56 @@ function GamePage() {
         onSelect={handleSelect}
         state={game.state}
       />
+
+      {game.status === 'finished' ? (
+        <div className="game-result-overlay" role="presentation">
+          <section
+            aria-labelledby="game-result-title"
+            aria-modal="true"
+            className="game-result-modal panel"
+            role="dialog"
+          >
+            <p className="game-result-kicker">Game Over</p>
+            <h2 id="game-result-title">{winnerLabel ?? 'Player'} won!</h2>
+            <p className="game-result-copy">
+              {opponentLeft
+                ? `${opponentPresence?.displayName ?? 'The other player'} left the game.`
+                : game.nextGameId
+                ? 'Starting the rematch now.'
+                : viewerIsPlayer
+                  ? 'Choose whether to rematch or leave.'
+                : `${rematchReadyCount}/2 players ready.`}
+            </p>
+            <p className="game-result-meta">{rematchReadyCount}/2 ready for rematch</p>
+            <div className="game-result-actions">
+              {viewerIsPlayer && !opponentLeft ? (
+                <button
+                  className="primary-button"
+                  disabled={isUpdatingRematch || Boolean(game.nextGameId)}
+                  onClick={() => void handleRematchToggle()}
+                  type="button"
+                >
+                  {game.nextGameId
+                    ? 'Rematch'
+                    : isUpdatingRematch
+                      ? 'Updating...'
+                      : viewerRematchRequested
+                        ? 'Cancel rematch'
+                        : 'Rematch'}
+                </button>
+              ) : null}
+              <button
+                className="secondary-button"
+                disabled={isLeavingGame}
+                onClick={() => void handleLeaveGame()}
+                type="button"
+              >
+                {isLeavingGame ? 'Leaving...' : 'Leave'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }

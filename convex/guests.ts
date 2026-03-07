@@ -51,3 +51,24 @@ export const heartbeat = mutation({
     return { ok: true }
   },
 })
+
+export const leaveFinishedGame = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await ensureGuest(ctx, args.guestToken)
+    const participant = await getParticipant(ctx.db, args.gameId, guest._id)
+
+    if (!participant) {
+      return { ok: true }
+    }
+
+    await ctx.db.patch(participant._id, {
+      lastSeenAt: 0,
+    })
+
+    return { ok: true }
+  },
+})

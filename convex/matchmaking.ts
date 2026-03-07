@@ -5,13 +5,13 @@ import {
   buildGuestSession,
   chooseOpeningOrder,
   createStoredInitialState,
-  ensureGuest,
   findActivePlayerGameParticipant,
   getGuestByToken,
   getQueueEntry,
   isPlayerParticipant,
   now,
   refreshDisconnectForfeit,
+  requireGuest,
 } from './lib'
 import type { MatchmakingStatus } from '../shared/contracts'
 
@@ -20,7 +20,7 @@ export const join = mutation({
     guestToken: v.string(),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const existingPlayerGame = await findActivePlayerGameParticipant(ctx.db, guest._id)
     if (existingPlayerGame) {
       return {

@@ -100,6 +100,7 @@ export default defineSchema({
     disconnectForfeitJobId: v.optional(v.id('_scheduled_functions')),
   })
     .index('by_gameId', ['gameId'])
+    .index('by_gameId_guestId', ['gameId', 'guestId'])
     .index('by_guestId', ['guestId'])
     .index('by_gameId_role', ['gameId', 'role']),
 

@@ -60,7 +60,8 @@ function LobbyPage() {
 
   const isAlreadyPlaying =
     session?.activeRole === 'playerOne' || session?.activeRole === 'playerTwo'
-  const hasActiveGame = Boolean(session?.activeGameId)
+  const activeGameId = session?.activeGameId ?? null
+  const hasActiveGame = activeGameId !== null
   const isQueued = matchmakingStatus?.state === 'queued'
 
   async function handleJoinMatchmaking() {
@@ -183,7 +184,7 @@ function LobbyPage() {
               onClick={() =>
                 void navigate({
                   to: '/games/$gameId',
-                  params: { gameId: session.activeGameId! },
+                  params: { gameId: activeGameId },
                 })
               }
               type="button"

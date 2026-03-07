@@ -5,9 +5,11 @@ import type { DatabaseReader, DatabaseWriter, MutationCtx } from './_generated/s
 import {
   createInitialGameState,
   deserializeGameState,
+  isValidHexCoord,
   opponentOf,
   serializeGameState,
   type GameState,
+  type HexCoord,
   type PlayerSlot,
   type SerializedGameState,
 } from '../shared/hexGame'
@@ -62,6 +64,8 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ONLINE_WINDOW_MS = 45_000
 export const DISCONNECT_FORFEIT_MS = 90_000
 export const DRAW_OFFER_COOLDOWN_MOVES = 8
+const GUEST_TOKEN_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type GuestDoc = Doc<'guests'>
 export type GameDoc = Doc<'games'>
@@ -116,6 +120,7 @@ export async function ensureGuest(
   ctx: MutationCtx,
   guestToken: string,
 ) {
+  assertValidGuestToken(guestToken)
   const existing = await getGuestByToken(ctx.db, guestToken)
   const seenAt = now()
 
@@ -138,17 +143,33 @@ export async function ensureGuest(
   return (await ctx.db.get(guestId))!
 }
 
+export async function requireGuest(
+  db: DatabaseReader | DatabaseWriter,
+  guestToken: string,
+) {
+  assertValidGuestToken(guestToken)
+  const guest = await getGuestByToken(db, guestToken)
+  if (guest) {
+    return guest
+  }
+
+  throw new ConvexError({
+    code: 'INVALID_GUEST_SESSION',
+    message: 'Guest session not found. Refresh to create a new guest session.',
+  })
+}
+
 export async function getParticipant(
   db: DatabaseReader | DatabaseWriter,
   gameId: Id<'games'>,
   guestId: Id<'guests'>,
 ) {
-  const participants = await db
+  return db
     .query('gameParticipants')
-    .withIndex('by_gameId', (query) => query.eq('gameId', gameId))
-    .collect()
-
-  return participants.find((participant) => participant.guestId === guestId) ?? null
+    .withIndex('by_gameId_guestId', (query) =>
+      query.eq('gameId', gameId).eq('guestId', guestId),
+    )
+    .unique()
 }
 
 export async function listParticipants(
@@ -451,10 +472,34 @@ export function throwGameError(
     | 'REMATCH_ALREADY_EXISTS'
     | 'DRAW_NOT_ALLOWED'
     | 'DRAW_ALREADY_PENDING'
-    | 'DRAW_NOT_PENDING',
+    | 'DRAW_NOT_PENDING'
+    | 'INVALID_COORD',
   message: string,
 ): never {
   throw new ConvexError({ code, message })
+}
+
+export function isValidGuestToken(guestToken: string) {
+  return GUEST_TOKEN_PATTERN.test(guestToken)
+}
+
+export function assertValidGuestToken(guestToken: string) {
+  if (isValidGuestToken(guestToken)) {
+    return
+  }
+
+  throw new ConvexError({
+    code: 'INVALID_GUEST_TOKEN',
+    message: 'Invalid guest token.',
+  })
+}
+
+export function assertValidMoveCoord(coord: HexCoord) {
+  if (isValidHexCoord(coord)) {
+    return
+  }
+
+  throwGameError('INVALID_COORD', 'Move coordinates are invalid.')
 }
 
 export function createGuestName(guestToken: string) {

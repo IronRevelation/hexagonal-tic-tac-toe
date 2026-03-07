@@ -28,6 +28,7 @@ export type SerializedGameState = {
 }
 
 export const WINNING_LENGTH = 6
+export const MAX_ABS_COORD = 100_000
 
 export const PRIMARY_DIRECTIONS: HexCoord[] = [
   { q: 1, r: 0 },
@@ -47,6 +48,15 @@ export const PLAYER_MARKS: Record<PlayerSlot, string> = {
 
 export function coordKey({ q, r }: HexCoord): string {
   return `${q},${r}`
+}
+
+export function isValidHexCoord({ q, r }: HexCoord): boolean {
+  return (
+    Number.isSafeInteger(q) &&
+    Number.isSafeInteger(r) &&
+    Math.abs(q) <= MAX_ABS_COORD &&
+    Math.abs(r) <= MAX_ABS_COORD
+  )
 }
 
 export function createInitialGameState(): GameState {

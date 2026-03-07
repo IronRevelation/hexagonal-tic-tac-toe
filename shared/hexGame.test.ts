@@ -5,6 +5,7 @@ import {
   coordKey,
   createInitialGameState,
   deserializeGameState,
+  isValidHexCoord,
   serializeGameState,
   type GameState,
   type HexCoord,
@@ -109,6 +110,12 @@ describe('hex game rules', () => {
     expect(Array.from(deserialized.board.entries())).toEqual(
       Array.from(state.board.entries()),
     )
+  })
+
+  it('rejects non-integer and oversized coordinates', () => {
+    expect(isValidHexCoord({ q: 4, r: -3 })).toBe(true)
+    expect(isValidHexCoord({ q: 1.5, r: 0 })).toBe(false)
+    expect(isValidHexCoord({ q: 100_001, r: 0 })).toBe(false)
   })
 })
 

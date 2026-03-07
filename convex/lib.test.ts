@@ -5,6 +5,7 @@ import {
   DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
+  isValidGuestToken,
 } from './lib'
 
 describe('draw offer helpers', () => {
@@ -37,5 +38,10 @@ describe('draw offer helpers', () => {
       drawOfferedBy: undefined,
       drawOfferedAtMoveIndex: undefined,
     })
+  })
+
+  it('accepts UUID guest tokens and rejects arbitrary strings', () => {
+    expect(isValidGuestToken('123e4567-e89b-42d3-a456-426614174000')).toBe(true)
+    expect(isValidGuestToken('not-a-token')).toBe(false)
   })
 })

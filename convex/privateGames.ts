@@ -4,12 +4,12 @@ import {
   assertCanJoinAsPlayer,
   createStoredInitialState,
   createUniqueRoomCode,
-  ensureGuest,
   getParticipant,
   isPlayerParticipant,
   listParticipants,
   now,
   refreshDisconnectForfeit,
+  requireGuest,
   throwGameError,
 } from './lib'
 import type { RoomJoinResult } from '../shared/contracts'
@@ -19,7 +19,7 @@ export const create = mutation({
     guestToken: v.string(),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     await assertCanJoinAsPlayer(ctx.db, guest._id)
 
     const timestamp = now()
@@ -63,7 +63,7 @@ export const join = mutation({
     roomCode: v.string(),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const roomCode = args.roomCode.trim().toUpperCase()
     const game = await ctx.db
       .query('games')

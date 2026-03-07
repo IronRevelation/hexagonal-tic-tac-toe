@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
 import {
+  assertValidMoveCoord,
   buildForfeitGamePatch,
   buildGameSnapshot,
   clearDrawOfferFields,
@@ -8,8 +9,6 @@ import {
   DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
-  ensureGuest,
-  fromStoredState,
   getGuestByToken,
   getParticipant,
   isPlayerParticipant,
@@ -17,6 +16,7 @@ import {
   loadGameState,
   now,
   refreshDisconnectForfeit,
+  requireGuest,
   requirePlayerRole,
   throwGameError,
   toStoredState,
@@ -83,7 +83,7 @@ export const placeMove = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')
@@ -102,6 +102,7 @@ export const placeMove = mutation({
     if (state.currentPlayer !== playerSlot) {
       throwGameError('NOT_YOUR_TURN', 'It is not your turn.')
     }
+    assertValidMoveCoord(args.coord)
     if (state.board.has(coordKey(args.coord))) {
       throwGameError('CELL_OCCUPIED', 'That hexagon is already occupied.')
     }
@@ -152,7 +153,7 @@ export const forfeitGame = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')
@@ -219,7 +220,7 @@ export const offerDraw = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')
@@ -266,7 +267,7 @@ export const acceptDraw = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')
@@ -308,7 +309,7 @@ export const declineDraw = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')
@@ -347,7 +348,7 @@ export const requestRematch = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')
@@ -470,7 +471,7 @@ export const cancelRematch = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const game = await ctx.db.get(args.gameId)
     if (!game) {
       throwGameError('GAME_NOT_FOUND', 'Game not found.')

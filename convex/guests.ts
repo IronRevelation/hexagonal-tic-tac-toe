@@ -8,6 +8,7 @@ import {
   isPlayerParticipant,
   now,
   refreshDisconnectForfeit,
+  requireGuest,
 } from './lib'
 
 export const ensure = mutation({
@@ -40,7 +41,7 @@ export const heartbeat = mutation({
     gameId: v.optional(v.id('games')),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const seenAt = now()
 
     await ctx.db.patch(guest._id, {
@@ -71,7 +72,7 @@ export const leaveFinishedGame = mutation({
     gameId: v.id('games'),
   },
   handler: async (ctx, args) => {
-    const guest = await ensureGuest(ctx, args.guestToken)
+    const guest = await requireGuest(ctx.db, args.guestToken)
     const participant = await getParticipant(ctx.db, args.gameId, guest._id)
 
     if (!participant) {

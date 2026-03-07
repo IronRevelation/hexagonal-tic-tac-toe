@@ -1,23 +1,27 @@
 import { v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { internalMutation, mutation, query } from './_generated/server'
 import {
+  buildForfeitGamePatch,
   buildGameSnapshot,
   clearDrawOfferFields,
   createStoredInitialState,
+  DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
   ensureGuest,
   fromStoredState,
   getGuestByToken,
   getParticipant,
+  isPlayerParticipant,
   listParticipants,
   loadGameState,
   now,
+  refreshDisconnectForfeit,
   requirePlayerRole,
   throwGameError,
   toStoredState,
 } from './lib'
-import { applyMove, coordKey, opponentOf, serializeGameState } from '../shared/hexGame'
+import { applyMove, coordKey, serializeGameState } from '../shared/hexGame'
 
 export const resumeForGuest = query({
   args: {
@@ -165,13 +169,44 @@ export const forfeitGame = mutation({
     const slot = requirePlayerRole(participant.role)
     const timestamp = now()
 
-    await ctx.db.patch(game._id, {
-      winnerSlot: opponentOf(slot),
-      finishReason: 'forfeit',
-      status: 'finished',
-      finishedAt: timestamp,
-      updatedAt: timestamp,
-      ...clearDrawOfferFields(),
+    await ctx.db.patch(game._id, buildForfeitGamePatch(slot, timestamp))
+
+    return { ok: true }
+  },
+})
+
+export const forfeitDisconnectedPlayer = internalMutation({
+  args: {
+    gameId: v.id('games'),
+    participantId: v.id('gameParticipants'),
+    generation: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get(args.gameId)
+    if (!game || game.status !== 'active') {
+      return { ok: true }
+    }
+
+    const participant = await ctx.db.get(args.participantId)
+    if (!participant || participant.gameId !== game._id || !isPlayerParticipant(participant)) {
+      return { ok: true }
+    }
+    if ((participant.disconnectForfeitGeneration ?? 0) !== args.generation) {
+      return { ok: true }
+    }
+
+    const timestamp = now()
+    if (timestamp - participant.lastSeenAt < DISCONNECT_FORFEIT_MS) {
+      return { ok: true }
+    }
+
+    await ctx.db.patch(
+      game._id,
+      buildForfeitGamePatch(requirePlayerRole(participant.role), timestamp),
+    )
+    await ctx.db.patch(participant._id, {
+      disconnectDeadlineAt: undefined,
+      disconnectForfeitJobId: undefined,
     })
 
     return { ok: true }
@@ -377,20 +412,34 @@ export const requestRematch = mutation({
       updatedAt: timestamp,
     })
 
-    await ctx.db.insert('gameParticipants', {
+    const playerOneParticipantId = await ctx.db.insert('gameParticipants', {
       gameId: nextGameId,
       guestId: game.playerTwoGuestId,
       role: 'playerOne',
       joinedAt: timestamp,
       lastSeenAt: timestamp,
     })
-    await ctx.db.insert('gameParticipants', {
+    const playerTwoParticipantId = await ctx.db.insert('gameParticipants', {
       gameId: nextGameId,
       guestId: game.playerOneGuestId,
       role: 'playerTwo',
       joinedAt: timestamp,
       lastSeenAt: timestamp,
     })
+    const playerOneParticipant = await ctx.db.get(playerOneParticipantId)
+    const playerTwoParticipant = await ctx.db.get(playerTwoParticipantId)
+
+    if (
+      !playerOneParticipant ||
+      !isPlayerParticipant(playerOneParticipant) ||
+      !playerTwoParticipant ||
+      !isPlayerParticipant(playerTwoParticipant)
+    ) {
+      throw new Error('Rematch participants were not created correctly.')
+    }
+
+    await refreshDisconnectForfeit(ctx, nextGameId, playerOneParticipant, timestamp)
+    await refreshDisconnectForfeit(ctx, nextGameId, playerTwoParticipant, timestamp)
 
     if (game.mode === 'private') {
       const participants = await listParticipants(ctx.db, game._id)

@@ -9,7 +9,9 @@ import {
   findActivePlayerGameParticipant,
   getGuestByToken,
   getQueueEntry,
+  isPlayerParticipant,
   now,
+  refreshDisconnectForfeit,
 } from './lib'
 import type { MatchmakingStatus } from '../shared/contracts'
 
@@ -87,20 +89,29 @@ export const join = mutation({
       seriesId: gameId,
     })
 
-    await ctx.db.insert('gameParticipants', {
+    const playerOneParticipantId = await ctx.db.insert('gameParticipants', {
       gameId,
       guestId: openingOrder.playerOneGuestId,
       role: 'playerOne',
       joinedAt: timestamp,
       lastSeenAt: timestamp,
     })
-    await ctx.db.insert('gameParticipants', {
+    const playerTwoParticipantId = await ctx.db.insert('gameParticipants', {
       gameId,
       guestId: openingOrder.playerTwoGuestId,
       role: 'playerTwo',
       joinedAt: timestamp,
       lastSeenAt: timestamp,
     })
+    const playerOneParticipant = await ctx.db.get(playerOneParticipantId)
+    const playerTwoParticipant = await ctx.db.get(playerTwoParticipantId)
+
+    if (!playerOneParticipant || !isPlayerParticipant(playerOneParticipant) || !playerTwoParticipant || !isPlayerParticipant(playerTwoParticipant)) {
+      throw new Error('Matchmaking participants were not created correctly.')
+    }
+
+    await refreshDisconnectForfeit(ctx, gameId, playerOneParticipant, timestamp)
+    await refreshDisconnectForfeit(ctx, gameId, playerTwoParticipant, timestamp)
 
     return {
       state: 'matched',

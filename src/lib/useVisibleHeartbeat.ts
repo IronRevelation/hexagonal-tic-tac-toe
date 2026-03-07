@@ -3,7 +3,7 @@ import { useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { asGameId } from './ids'
 
-const HEARTBEAT_MS = 20_000
+const HEARTBEAT_MS = 10_000
 
 type BindVisibleHeartbeatOptions = {
   heartbeat: () => void
@@ -60,10 +60,6 @@ export function bindVisibleHeartbeat({
   let intervalId: number | null = null
 
   const ping = () => {
-    if (getVisibilityState() !== 'visible') {
-      return
-    }
-
     heartbeat()
   }
 
@@ -76,19 +72,13 @@ export function bindVisibleHeartbeat({
 
   const start = () => {
     stop()
-    if (getVisibilityState() !== 'visible') {
-      return
-    }
-
     ping()
     intervalId = setIntervalFn(ping, HEARTBEAT_MS)
   }
 
   const handleVisibilityChange = () => {
     if (getVisibilityState() === 'visible') {
-      start()
-    } else {
-      stop()
+      ping()
     }
   }
 

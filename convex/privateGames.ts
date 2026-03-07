@@ -6,8 +6,10 @@ import {
   createUniqueRoomCode,
   ensureGuest,
   getParticipant,
+  isPlayerParticipant,
   listParticipants,
   now,
+  refreshDisconnectForfeit,
   throwGameError,
 } from './lib'
 import type { RoomJoinResult } from '../shared/contracts'
@@ -105,7 +107,7 @@ export const join = mutation({
         (String(game._id).charCodeAt(0) + String(guest._id).charCodeAt(0)) % 2 === 0
 
       if (creatorStaysPlayerOne) {
-        await ctx.db.insert('gameParticipants', {
+        const playerTwoParticipantId = await ctx.db.insert('gameParticipants', {
           gameId: game._id,
           guestId: guest._id,
           role: 'playerTwo',
@@ -119,6 +121,15 @@ export const join = mutation({
           startedAt: timestamp,
           updatedAt: timestamp,
         })
+        const playerOneParticipant = await ctx.db.get(creator._id)
+        const playerTwoParticipant = await ctx.db.get(playerTwoParticipantId)
+
+        if (!playerOneParticipant || !isPlayerParticipant(playerOneParticipant) || !playerTwoParticipant || !isPlayerParticipant(playerTwoParticipant)) {
+          throw new Error('Private game participants were not created correctly.')
+        }
+
+        await refreshDisconnectForfeit(ctx, game._id, playerOneParticipant, timestamp)
+        await refreshDisconnectForfeit(ctx, game._id, playerTwoParticipant, timestamp)
 
         return {
           gameId: game._id,
@@ -130,7 +141,7 @@ export const join = mutation({
         role: 'playerTwo',
         lastSeenAt: timestamp,
       })
-      await ctx.db.insert('gameParticipants', {
+      const playerOneParticipantId = await ctx.db.insert('gameParticipants', {
         gameId: game._id,
         guestId: guest._id,
         role: 'playerOne',
@@ -144,6 +155,15 @@ export const join = mutation({
         startedAt: timestamp,
         updatedAt: timestamp,
       })
+      const playerOneParticipant = await ctx.db.get(playerOneParticipantId)
+      const playerTwoParticipant = await ctx.db.get(creator._id)
+
+      if (!playerOneParticipant || !isPlayerParticipant(playerOneParticipant) || !playerTwoParticipant || !isPlayerParticipant(playerTwoParticipant)) {
+        throw new Error('Private game participants were not created correctly.')
+      }
+
+      await refreshDisconnectForfeit(ctx, game._id, playerOneParticipant, timestamp)
+      await refreshDisconnectForfeit(ctx, game._id, playerTwoParticipant, timestamp)
 
       return {
         gameId: game._id,

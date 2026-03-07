@@ -249,7 +249,8 @@ function LobbyPage() {
               </button>
             </div>
             <p className={`${mutedCopy} m-0`}>
-              Open seat joins as player. Full room joins as spectator.
+              If the room has an open player slot, you&apos;ll join as a player. If both
+              player slots are taken, you&apos;ll join as a spectator.
             </p>
           </form>
 

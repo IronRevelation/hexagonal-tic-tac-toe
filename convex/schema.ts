@@ -95,6 +95,9 @@ export default defineSchema({
     role: participantRole,
     joinedAt: v.number(),
     lastSeenAt: v.number(),
+    disconnectDeadlineAt: v.optional(v.number()),
+    disconnectForfeitGeneration: v.optional(v.number()),
+    disconnectForfeitJobId: v.optional(v.id('_scheduled_functions')),
   })
     .index('by_gameId', ['gameId'])
     .index('by_guestId', ['guestId'])

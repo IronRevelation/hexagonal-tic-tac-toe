@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Flag, Handshake } from 'lucide-react'
+import { Check, Copy, Flag, Handshake, Trash2 } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
 import type { GameSnapshot } from '../../shared/contracts'
 import { PLAYER_LABELS, type HexCoord, type PlayerSlot } from '../../shared/hexGame'
@@ -42,6 +42,9 @@ function GamePage() {
   const [isRespondingToDraw, setIsRespondingToDraw] = useState(false)
   const [isForfeitingGame, setIsForfeitingGame] = useState(false)
   const [isConfirmingForfeit, setIsConfirmingForfeit] = useState(false)
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false)
+  const [isConfirmingDeleteRoom, setIsConfirmingDeleteRoom] = useState(false)
+  const [copiedShareLink, setCopiedShareLink] = useState(false)
   const [isLeavingGame, setIsLeavingGame] = useState(false)
   const game = useQuery(
     api.games.byIdForGuest,
@@ -55,6 +58,7 @@ function GamePage() {
   const declineDraw = useMutation(api.games.declineDraw)
   const forfeitGame = useMutation(api.games.forfeitGame)
   const leaveFinishedGame = useMutation(api.guests.leaveFinishedGame)
+  const deletePrivateRoom = useMutation(api.privateGames.remove)
 
   useVisibleHeartbeat(guestToken, gameId)
 
@@ -66,6 +70,20 @@ function GamePage() {
       })
     }
   }, [game?.gameId, game?.nextGameId, navigate])
+
+  useEffect(() => {
+    if (!copiedShareLink) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCopiedShareLink(false)
+    }, 1800)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [copiedShareLink])
 
   async function handleSelect(coord: HexCoord) {
     if (!guestToken) {
@@ -212,6 +230,45 @@ function GamePage() {
     }
   }
 
+  async function handleCopyShareLink() {
+    if (!game?.roomCode) {
+      return
+    }
+
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable')
+      }
+
+      await navigator.clipboard.writeText(buildShareLink(game.roomCode))
+      setCopiedShareLink(true)
+    } catch {
+      setMoveError('Unable to copy the room link on this device.')
+    }
+  }
+
+  async function handleDeleteRoom() {
+    if (!guestToken || !game) {
+      return
+    }
+
+    setIsDeletingRoom(true)
+    setMoveError(null)
+
+    try {
+      await deletePrivateRoom({
+        guestToken,
+        gameId: asGameId(gameId),
+      })
+      setIsConfirmingDeleteRoom(false)
+      await navigate({ to: '/' })
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to delete this private room.'))
+    } finally {
+      setIsDeletingRoom(false)
+    }
+  }
+
   if (isGuestLoading || game === undefined) {
     return (
       <main className={`${pageWrap} px-4 py-16`}>
@@ -252,6 +309,7 @@ function GamePage() {
   const winnerSlot = game.state.winner ?? game.winnerSlot
   const winnerLabel = winnerSlot ? describePlayer(game, winnerSlot) : null
   const summaryLabel = game.mode === 'private' ? 'Private Room' : 'Live Match'
+  const privateRoomLink = game.roomCode ? buildShareLink(game.roomCode) : null
   const viewerSlot =
     game.viewerRole === 'playerOne' ? 'one' : game.viewerRole === 'playerTwo' ? 'two' : null
   const opponentSlot =
@@ -294,8 +352,8 @@ function GamePage() {
 
   return (
     <main className="mx-auto grid h-dvh w-[calc(100%-2rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-[0.6rem] px-4 py-3 max-[1080px]:min-h-dvh max-[1080px]:w-[min(100%,calc(100%-2rem))] max-[720px]:w-[min(100%,calc(100%-1rem))]">
-      <section className={`${surfacePanel} grid gap-[0.65rem] rounded-[1.8rem] px-[0.9rem] py-[0.7rem]`}>
-        <div className="grid items-center gap-3 min-[1081px]:grid-cols-[auto_minmax(16rem,28rem)_auto] max-[1080px]:grid-cols-1">
+      <section className={`${surfacePanel} rounded-[1.6rem] px-[0.95rem] py-[0.65rem]`}>
+        <div className="grid items-center gap-x-4 gap-y-2 min-[1240px]:grid-cols-[auto_minmax(0,1fr)_auto] max-[1239px]:grid-cols-[auto_minmax(0,1fr)] max-[920px]:grid-cols-1">
           <div className="flex flex-wrap items-center gap-3">
             <Link
               to="/"
@@ -323,19 +381,56 @@ function GamePage() {
             </div>
           </div>
 
-          <div className="grid min-w-0 gap-[0.22rem] px-[0.2rem]">
-            <span className="text-[0.68rem] font-extrabold uppercase tracking-[0.12em] text-[var(--sea-ink-soft)]">
-              {summaryLabel}
-            </span>
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.96rem] leading-[1.2] max-[720px]:whitespace-normal">
-              {buildTurnCopy(game, currentPlayerLabel, winnerLabel)}
-            </strong>
-            <div className="flex flex-wrap gap-[0.45rem] gap-y-[0.8rem] text-[0.78rem] text-[var(--sea-ink-soft)]">
-              {game.mode === 'private' && game.roomCode ? <span>Room {game.roomCode}</span> : null}
+          <div className="grid min-w-0 gap-x-4 gap-y-2 text-left min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[1240px]:justify-self-center">
+            <div className="grid min-w-0 gap-[0.2rem] content-center">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-[var(--sea-ink-soft)]">
+                <span className="font-bold uppercase tracking-[0.12em]">
+                  {summaryLabel}
+                </span>
+                {game.spectatorCount > 0 ? (
+                  <span>
+                    {game.spectatorCount} spectator{game.spectatorCount === 1 ? '' : 's'}
+                  </span>
+                ) : null}
+              </div>
+              <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.98rem] leading-[1.2] max-[720px]:whitespace-normal">
+                {buildTurnCopy(game, currentPlayerLabel, winnerLabel)}
+              </strong>
             </div>
+            {game.roomCode && privateRoomLink ? (
+              <div className="grid justify-items-stretch gap-[0.4rem] min-[760px]:justify-self-end">
+                <span className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-bold leading-none tracking-[0.12em] text-[var(--sea-ink)]">
+                  {game.roomCode}
+                </span>
+                <button
+                  className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[var(--sea-ink-soft)]"
+                  onClick={() => void handleCopyShareLink()}
+                  type="button"
+                >
+                  <span className="inline-flex items-center justify-center gap-[0.35rem]">
+                    {copiedShareLink ? (
+                      <Check size={13} strokeWidth={2.5} />
+                    ) : (
+                      <Copy size={13} strokeWidth={2.2} />
+                    )}
+                    {copiedShareLink ? 'Copied' : 'Copy link'}
+                  </span>
+                </button>
+                {game.canDeleteRoom ? (
+                  <button
+                    className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[rgba(214,118,95,0.22)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[#d98d79]"
+                    onClick={() => setIsConfirmingDeleteRoom(true)}
+                    type="button"
+                  >
+                    <Trash2 size={13} strokeWidth={2.2} />
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
-          <div className="justify-self-end max-[1080px]:justify-self-stretch">
+          <div className="justify-self-end max-[1240px]:col-span-2 max-[1240px]:justify-self-stretch max-[920px]:col-span-1">
             <div className="flex flex-wrap items-center gap-[0.45rem] max-[820px]:justify-start">
               <PlayerCard
                 active={currentPlayer === 'one' && game.status === 'active'}
@@ -360,18 +455,6 @@ function GamePage() {
             </div>
           </div>
         </div>
-
-        {game.mode === 'private' && game.roomCode ? (
-          <section className="grid gap-3 rounded-[1.2rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_84%,transparent_16%)] px-4 py-[0.95rem]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-[0.75rem] font-bold uppercase tracking-[0.08em] text-[var(--sea-ink-soft)]">
-                Share room
-              </span>
-              <strong>{game.roomCode}</strong>
-            </div>
-            <a href={buildShareLink(game.roomCode)}>{buildShareLink(game.roomCode)}</a>
-          </section>
-        ) : null}
 
         {incomingDrawOffer ? (
           <section className="flex items-center justify-between gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem] max-[720px]:flex-col max-[720px]:items-start">
@@ -558,6 +641,44 @@ function GamePage() {
           </section>
         </div>
       ) : null}
+
+      {isConfirmingDeleteRoom ? (
+        <div className={modalOverlay} role="presentation">
+          <section
+            aria-labelledby="delete-room-title"
+            aria-modal="true"
+            className={modalPanel}
+            role="dialog"
+          >
+            <p className={modalKicker}>Delete room</p>
+            <h2 id="delete-room-title" className="m-0 text-[1.8rem]">
+              Delete this private room?
+            </h2>
+            <p className="m-0 text-[var(--sea-ink-soft)]">
+              This removes the room code immediately. You can only do this before anyone
+              else joins.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3 max-[720px]:flex-col">
+              <button
+                className={secondaryButton}
+                disabled={isDeletingRoom}
+                onClick={() => setIsConfirmingDeleteRoom(false)}
+                type="button"
+              >
+                Keep room
+              </button>
+              <button
+                className={dangerButton}
+                disabled={isDeletingRoom}
+                onClick={() => void handleDeleteRoom()}
+                type="button"
+              >
+                {isDeletingRoom ? 'Deleting...' : 'Delete room'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }
@@ -576,24 +697,27 @@ function PlayerCard({
   return (
     <div
       className={cn(
-        'flex min-w-[9.6rem] items-center gap-[0.55rem] py-[0.1rem] max-[720px]:w-full max-[720px]:min-w-0',
-        active && 'text-[var(--sea-ink)]',
+        'grid min-w-[10.2rem] gap-[0.28rem] rounded-[1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_78%,transparent_22%)] px-[0.8rem] py-[0.65rem] max-[720px]:w-full max-[720px]:min-w-0',
+        active &&
+          'border-[color-mix(in_oklab,var(--lagoon)_28%,var(--line))] bg-[color-mix(in_oklab,var(--surface-strong)_84%,transparent_16%)] text-[var(--sea-ink)]',
       )}
     >
-      <span
-        className="inline-flex h-[1.45rem] w-[1.45rem] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-[0.82rem] leading-none font-extrabold text-[var(--sea-ink-soft)] transition-[color] duration-[180ms]"
-        style={
-          active
-            ? { color: slot === 'one' ? 'var(--amber)' : 'var(--lagoon)' }
-            : undefined
-        }
-      >
-        {slot === 'one' ? 'X' : 'O'}
-      </span>
-      <div className="grid gap-[0.2rem]">
-        <strong className="text-[0.84rem] font-bold">{label}</strong>
-        <span className="text-[0.7rem] text-[var(--sea-ink-soft)]">{note}</span>
+      <div className="flex items-center gap-[0.55rem]">
+        <span
+          className="inline-flex h-[1.45rem] w-[1.45rem] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-[0.82rem] leading-none font-extrabold text-[var(--sea-ink-soft)] transition-[color] duration-[180ms]"
+          style={
+            active
+              ? { color: slot === 'one' ? 'var(--amber)' : 'var(--lagoon)' }
+              : undefined
+          }
+        >
+          {slot === 'one' ? 'X' : 'O'}
+        </span>
+        <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.84rem] font-bold">
+          {label}
+        </strong>
       </div>
+      <span className="text-[0.7rem] text-[var(--sea-ink-soft)]">{note}</span>
     </div>
   )
 }

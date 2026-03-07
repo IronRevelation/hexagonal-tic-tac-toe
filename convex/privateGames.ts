@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 import { mutation } from './_generated/server'
 import {
   assertCanJoinAsPlayer,
+  canDeletePrivateRoom,
   createStoredInitialState,
   createUniqueRoomCode,
   getParticipant,
@@ -183,5 +184,46 @@ export const join = mutation({
       gameId: game._id,
       role: 'spectator',
     } satisfies RoomJoinResult
+  },
+})
+
+export const remove = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await requireGuest(ctx.db, args.guestToken)
+    const game = await ctx.db.get(args.gameId)
+
+    if (!game) {
+      throwGameError('GAME_NOT_FOUND', 'Private room not found.')
+    }
+
+    const participants = await listParticipants(ctx.db, game._id)
+
+    if (!canDeletePrivateRoom(game, participants, guest._id)) {
+      throwGameError(
+        'ROOM_DELETE_NOT_ALLOWED',
+        'This private room can only be deleted by its creator before anyone joins it.',
+      )
+    }
+
+    const moves = await ctx.db
+      .query('gameMoves')
+      .withIndex('by_gameId_moveIndex', (query) => query.eq('gameId', game._id))
+      .collect()
+
+    for (const participant of participants) {
+      await ctx.db.delete(participant._id)
+    }
+
+    for (const move of moves) {
+      await ctx.db.delete(move._id)
+    }
+
+    await ctx.db.delete(game._id)
+
+    return { ok: true }
   },
 })

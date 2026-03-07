@@ -49,6 +49,7 @@ export type GameSnapshot = {
   state: SerializedGameState
   players: Record<PlayerSlot, PlayerPresence | null>
   spectatorCount: number
+  canDeleteRoom: boolean
   rematch: RematchState
   drawOffer: DrawOfferState
   updatedAt: number

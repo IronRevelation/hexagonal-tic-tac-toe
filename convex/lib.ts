@@ -415,6 +415,7 @@ export async function buildGameSnapshot(
       two: playerTwo,
     },
     spectatorCount,
+    canDeleteRoom: canDeletePrivateRoom(game, participants, guest._id),
     rematch: {
       requestedByPlayerOne: game.rematchRequestedByPlayerOne,
       requestedByPlayerTwo: game.rematchRequestedByPlayerTwo,
@@ -457,6 +458,26 @@ export async function assertCanJoinAsPlayer(
       message: 'You are already playing in another active game.',
     })
   }
+}
+
+export function canDeletePrivateRoom(
+  game: GameDoc,
+  participants: ParticipantDoc[],
+  guestId: Id<'guests'>,
+) {
+  if (game.mode !== 'private' || game.status !== 'waiting') {
+    return false
+  }
+
+  if (game.createdByGuestId !== guestId || participants.length !== 1) {
+    return false
+  }
+
+  const [creatorParticipant] = participants
+
+  return (
+    creatorParticipant?.guestId === guestId && creatorParticipant.role === 'playerOne'
+  )
 }
 
 export function throwGameError(

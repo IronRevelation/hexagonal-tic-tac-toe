@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildForfeitGamePatch,
+  canDeletePrivateRoom,
   clearDrawOfferFields,
   DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
@@ -38,6 +39,45 @@ describe('draw offer helpers', () => {
       drawOfferedBy: undefined,
       drawOfferedAtMoveIndex: undefined,
     })
+  })
+
+  it('allows deleting only untouched waiting private rooms owned by the creator', () => {
+    const creatorId = 'guest_creator' as never
+    const otherId = 'guest_other' as never
+    const waitingPrivateGame = {
+      mode: 'private',
+      status: 'waiting',
+      createdByGuestId: creatorId,
+    } as never
+
+    expect(
+      canDeletePrivateRoom(
+        waitingPrivateGame,
+        [{ guestId: creatorId, role: 'playerOne' }] as never,
+        creatorId,
+      ),
+    ).toBe(true)
+    expect(
+      canDeletePrivateRoom(
+        waitingPrivateGame,
+        [{ guestId: creatorId, role: 'playerOne' }, { guestId: otherId, role: 'playerTwo' }] as never,
+        creatorId,
+      ),
+    ).toBe(false)
+    expect(
+      canDeletePrivateRoom(
+        { ...waitingPrivateGame, status: 'active' },
+        [{ guestId: creatorId, role: 'playerOne' }] as never,
+        creatorId,
+      ),
+    ).toBe(false)
+    expect(
+      canDeletePrivateRoom(
+        waitingPrivateGame,
+        [{ guestId: creatorId, role: 'playerOne' }] as never,
+        otherId,
+      ),
+    ).toBe(false)
   })
 
   it('accepts UUID guest tokens and rejects arbitrary strings', () => {

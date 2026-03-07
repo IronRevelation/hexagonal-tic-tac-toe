@@ -9,6 +9,22 @@ import HexBoard from '../components/HexBoard'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
 import { asGameId } from '../lib/ids'
+import {
+  brandOrb,
+  cn,
+  dangerButton,
+  eyebrow,
+  errorPanel,
+  modalKicker,
+  modalOverlay,
+  modalPanel,
+  navLink,
+  navLinkActive,
+  pageWrap,
+  primaryButton,
+  secondaryButton,
+  surfacePanel,
+} from '../lib/ui'
 import { useVisibleHeartbeat } from '../lib/useVisibleHeartbeat'
 
 export const Route = createFileRoute('/games/$gameId')({
@@ -198,10 +214,12 @@ function GamePage() {
 
   if (isGuestLoading || game === undefined) {
     return (
-      <main className="page-wrap px-4 py-16">
-        <section className="surface-panel action-card narrow-card">
-          <p className="eyebrow">Loading game</p>
-          <h1>Syncing live state…</h1>
+      <main className={`${pageWrap} px-4 py-16`}>
+        <section
+          className={`${surfacePanel} grid max-w-[34rem] gap-4 rounded-[1.7rem] p-[1.4rem] max-[720px]:rounded-[1.35rem]`}
+        >
+          <p className={eyebrow}>Loading game</p>
+          <h1 className="m-0 text-[1.35rem]">Syncing live state…</h1>
         </section>
       </main>
     )
@@ -209,12 +227,16 @@ function GamePage() {
 
   if (!game) {
     return (
-      <main className="page-wrap px-4 py-16">
-        <section className="surface-panel action-card narrow-card">
-          <p className="eyebrow">Unavailable</p>
-          <h1>This game is not available to this guest.</h1>
-          <p>Use the private join code or return to the lobby.</p>
-          <Link className="secondary-button inline-flex" to="/">
+      <main className={`${pageWrap} px-4 py-16`}>
+        <section
+          className={`${surfacePanel} grid max-w-[34rem] gap-4 rounded-[1.7rem] p-[1.4rem] max-[720px]:rounded-[1.35rem]`}
+        >
+          <p className={eyebrow}>Unavailable</p>
+          <h1 className="m-0 text-[1.35rem]">This game is not available to this guest.</h1>
+          <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
+            Use the private join code or return to the lobby.
+          </p>
+          <Link className={secondaryButton} to="/">
             Return to lobby
           </Link>
         </section>
@@ -271,45 +293,50 @@ function GamePage() {
     !game.nextGameId
 
   return (
-    <main className="game-page px-4 py-3">
-      <section className="game-overview panel">
-        <div className="game-overview-main">
-          <div className="game-overview-start">
-            <Link to="/" className="game-wordmark">
-              <span className="brand-orb" />
+    <main className="mx-auto grid h-dvh w-[calc(100%-2rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-[0.6rem] px-4 py-3 max-[1080px]:min-h-dvh max-[1080px]:w-[min(100%,calc(100%-2rem))] max-[720px]:w-[min(100%,calc(100%-1rem))]">
+      <section className={`${surfacePanel} grid gap-[0.65rem] rounded-[1.8rem] px-[0.9rem] py-[0.7rem]`}>
+        <div className="grid items-center gap-3 min-[1081px]:grid-cols-[auto_minmax(16rem,28rem)_auto] max-[1080px]:grid-cols-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-[0.55rem] text-[0.96rem] font-bold text-[var(--sea-ink)] no-underline"
+            >
+              <span className={brandOrb} />
               <span>Hexagonal Tic-Tac-Toe</span>
             </Link>
 
-            <div className="header-links game-nav-links">
+            <div className="flex items-center gap-4">
               <Link
                 to="/"
-                className="nav-link"
-                activeProps={{ className: 'nav-link is-active' }}
+                className={navLink}
+                activeProps={{ className: navLinkActive }}
               >
                 Lobby
               </Link>
               <Link
                 to="/about"
-                className="nav-link"
-                activeProps={{ className: 'nav-link is-active' }}
+                className={navLink}
+                activeProps={{ className: navLinkActive }}
               >
                 Rules
               </Link>
             </div>
           </div>
 
-          <div className="game-summary-card">
-            <span className="game-summary-label">{summaryLabel}</span>
-            <strong className="game-summary-title">
+          <div className="grid min-w-0 gap-[0.22rem] px-[0.2rem]">
+            <span className="text-[0.68rem] font-extrabold uppercase tracking-[0.12em] text-[var(--sea-ink-soft)]">
+              {summaryLabel}
+            </span>
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.96rem] leading-[1.2] max-[720px]:whitespace-normal">
               {buildTurnCopy(game, currentPlayerLabel, winnerLabel)}
             </strong>
-            <div className="game-summary-meta">
+            <div className="flex flex-wrap gap-[0.45rem] gap-y-[0.8rem] text-[0.78rem] text-[var(--sea-ink-soft)]">
               {game.mode === 'private' && game.roomCode ? <span>Room {game.roomCode}</span> : null}
             </div>
           </div>
 
-          <div className="game-overview-end">
-            <div className="game-seats">
+          <div className="justify-self-end max-[1080px]:justify-self-stretch">
+            <div className="flex flex-wrap items-center gap-[0.45rem] max-[820px]:justify-start">
               <PlayerCard
                 active={currentPlayer === 'one' && game.status === 'active'}
                 label={game.players.one?.displayName ?? PLAYER_LABELS.one}
@@ -335,9 +362,11 @@ function GamePage() {
         </div>
 
         {game.mode === 'private' && game.roomCode ? (
-          <section className="game-utility-card">
-            <div className="game-utility-header">
-              <span className="game-utility-label">Share room</span>
+          <section className="grid gap-3 rounded-[1.2rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_84%,transparent_16%)] px-4 py-[0.95rem]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-[0.75rem] font-bold uppercase tracking-[0.08em] text-[var(--sea-ink-soft)]">
+                Share room
+              </span>
               <strong>{game.roomCode}</strong>
             </div>
             <a href={buildShareLink(game.roomCode)}>{buildShareLink(game.roomCode)}</a>
@@ -345,14 +374,16 @@ function GamePage() {
         ) : null}
 
         {incomingDrawOffer ? (
-          <section className="game-alert-strip">
+          <section className="flex items-center justify-between gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem] max-[720px]:flex-col max-[720px]:items-start">
             <div>
               <strong>Draw offered by {drawOfferPlayerLabel}</strong>
-              <p>Accept to end the game as a draw, or decline and keep playing.</p>
+              <p className="mt-[0.2rem] text-[0.84rem] text-[var(--sea-ink-soft)]">
+                Accept to end the game as a draw, or decline and keep playing.
+              </p>
             </div>
-            <div className="game-alert-actions">
+            <div className="flex flex-wrap items-center gap-[0.65rem]">
               <button
-                className="primary-button"
+                className={primaryButton}
                 disabled={isRespondingToDraw}
                 onClick={() => void handleDrawResponse('accept')}
                 type="button"
@@ -360,7 +391,7 @@ function GamePage() {
                 {isRespondingToDraw ? 'Updating...' : 'Accept'}
               </button>
               <button
-                className="secondary-button"
+                className={secondaryButton}
                 disabled={isRespondingToDraw}
                 onClick={() => void handleDrawResponse('decline')}
                 type="button"
@@ -372,16 +403,18 @@ function GamePage() {
         ) : null}
 
         {outgoingDrawOffer ? (
-          <section className="game-alert-strip is-passive">
+          <section className="flex items-center gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem]">
             <div>
               <strong>Draw offer sent</strong>
-              <p>Waiting for your opponent to respond.</p>
+              <p className="mt-[0.2rem] text-[0.84rem] text-[var(--sea-ink-soft)]">
+                Waiting for your opponent to respond.
+              </p>
             </div>
           </section>
         ) : null}
       </section>
 
-      {moveError ? <section className="surface-panel error-panel">{moveError}</section> : null}
+      {moveError ? <section className={errorPanel}>{moveError}</section> : null}
 
       <HexBoard
         canPlay={game.viewerCanMove && !waitingForOpponent}
@@ -389,7 +422,7 @@ function GamePage() {
         onSelect={handleSelect}
         overlay={
           viewerIsPlayer && game.status === 'active' ? (
-            <div className="game-board-actions">
+            <div className="inline-flex max-w-[11rem] flex-wrap items-center gap-[0.55rem]">
               <button
                 aria-label={
                   pendingDrawOfferedBy === null && remainingDrawMoves > 0
@@ -398,7 +431,7 @@ function GamePage() {
                       ? 'Sending draw offer'
                       : 'Offer draw'
                 }
-                className="board-icon-button"
+                className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(207,228,237,0.18)] bg-[rgba(10,24,35,0.72)] p-0 text-[rgba(221,234,240,0.92)] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
                 disabled={!canOfferDraw || isOfferingDraw}
                 onClick={() => void handleOfferDraw()}
                 title={
@@ -412,7 +445,7 @@ function GamePage() {
               </button>
               <button
                 aria-label="Forfeit game"
-                className="board-icon-button is-danger"
+                className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(214,118,95,0.28)] bg-[rgba(10,24,35,0.72)] p-0 text-[#ffd7cf] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
                 disabled={isForfeitingGame}
                 onClick={() => setIsConfirmingForfeit(true)}
                 title="Forfeit"
@@ -421,7 +454,7 @@ function GamePage() {
                 <Flag size={16} strokeWidth={2.2} />
               </button>
               {pendingDrawOfferedBy === null && remainingDrawMoves > 0 ? (
-                <span className="board-action-hint">
+                <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
                   Draw in {remainingDrawMoves}
                 </span>
               ) : null}
@@ -432,16 +465,18 @@ function GamePage() {
       />
 
       {game.status === 'finished' ? (
-        <div className="game-result-overlay" role="presentation">
+        <div className={modalOverlay} role="presentation">
           <section
             aria-labelledby="game-result-title"
             aria-modal="true"
-            className="game-result-modal panel"
+            className={modalPanel}
             role="dialog"
           >
-            <p className="game-result-kicker">Game Over</p>
-            <h2 id="game-result-title">{buildFinishedTitle(game, winnerLabel)}</h2>
-            <p className="game-result-copy">
+            <p className={modalKicker}>Game Over</p>
+            <h2 id="game-result-title" className="m-0 text-[1.8rem]">
+              {buildFinishedTitle(game, winnerLabel)}
+            </h2>
+            <p className="m-0 text-[var(--sea-ink-soft)]">
               {game.finishReason === 'drawAgreement'
                 ? 'Both players agreed to a draw.'
                 : game.finishReason === 'forfeit'
@@ -454,11 +489,13 @@ function GamePage() {
                   ? 'Choose whether to rematch or leave.'
                 : `${rematchReadyCount}/2 players ready.`}
             </p>
-            <p className="game-result-meta">{rematchReadyCount}/2 ready for rematch</p>
-            <div className="game-result-actions">
+            <p className="mt-[-0.2rem] text-[0.8rem] font-bold text-[var(--sea-ink-soft)]">
+              {rematchReadyCount}/2 ready for rematch
+            </p>
+            <div className="flex flex-wrap justify-center gap-3 max-[720px]:flex-col">
               {viewerIsPlayer && !opponentLeft ? (
                 <button
-                  className="primary-button"
+                  className={primaryButton}
                   disabled={isUpdatingRematch || Boolean(game.nextGameId)}
                   onClick={() => void handleRematchToggle()}
                   type="button"
@@ -473,7 +510,7 @@ function GamePage() {
                 </button>
               ) : null}
               <button
-                className="secondary-button"
+                className={secondaryButton}
                 disabled={isLeavingGame}
                 onClick={() => void handleLeaveGame()}
                 type="button"
@@ -486,19 +523,23 @@ function GamePage() {
       ) : null}
 
       {isConfirmingForfeit ? (
-        <div className="game-result-overlay" role="presentation">
+        <div className={modalOverlay} role="presentation">
           <section
             aria-labelledby="forfeit-title"
             aria-modal="true"
-            className="game-result-modal panel"
+            className={modalPanel}
             role="dialog"
           >
-            <p className="game-result-kicker">Confirm</p>
-            <h2 id="forfeit-title">Forfeit game?</h2>
-            <p className="game-result-copy">This ends the game immediately and counts as a loss.</p>
-            <div className="game-result-actions">
+            <p className={modalKicker}>Confirm</p>
+            <h2 id="forfeit-title" className="m-0 text-[1.8rem]">
+              Forfeit game?
+            </h2>
+            <p className="m-0 text-[var(--sea-ink-soft)]">
+              This ends the game immediately and counts as a loss.
+            </p>
+            <div className="flex flex-wrap justify-center gap-3 max-[720px]:flex-col">
               <button
-                className="secondary-button"
+                className={secondaryButton}
                 disabled={isForfeitingGame}
                 onClick={() => setIsConfirmingForfeit(false)}
                 type="button"
@@ -506,7 +547,7 @@ function GamePage() {
                 Cancel
               </button>
               <button
-                className="primary-button danger-button"
+                className={cn(primaryButton, dangerButton)}
                 disabled={isForfeitingGame}
                 onClick={() => void handleConfirmForfeit()}
                 type="button"
@@ -533,11 +574,25 @@ function PlayerCard({
   slot: PlayerSlot
 }) {
   return (
-    <div className={`player-seat ${active ? 'is-active' : ''} player-${slot}`}>
-      <span className="player-seat-mark">{slot === 'one' ? 'X' : 'O'}</span>
-      <div className="player-seat-copy">
-        <strong>{label}</strong>
-        <span className="player-seat-note">{note}</span>
+    <div
+      className={cn(
+        'flex min-w-[9.6rem] items-center gap-[0.55rem] py-[0.1rem] max-[720px]:w-full max-[720px]:min-w-0',
+        active && 'text-[var(--sea-ink)]',
+      )}
+    >
+      <span
+        className="inline-flex h-[1.45rem] w-[1.45rem] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-[0.82rem] leading-none font-extrabold text-[var(--sea-ink-soft)] transition-[color] duration-[180ms]"
+        style={
+          active
+            ? { color: slot === 'one' ? 'var(--amber)' : 'var(--lagoon)' }
+            : undefined
+        }
+      >
+        {slot === 'one' ? 'X' : 'O'}
+      </span>
+      <div className="grid gap-[0.2rem]">
+        <strong className="text-[0.84rem] font-bold">{label}</strong>
+        <span className="text-[0.7rem] text-[var(--sea-ink-soft)]">{note}</span>
       </div>
     </div>
   )

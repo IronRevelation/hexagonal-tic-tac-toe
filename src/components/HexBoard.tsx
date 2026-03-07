@@ -5,6 +5,7 @@ import {
   type PointerEvent,
 } from 'react'
 import { PLAYER_MARKS, coordKey, type HexCoord, type SerializedGameState } from '../../shared/hexGame'
+import { primaryButton, surfacePanel } from '../lib/ui'
 
 type Camera = {
   x: number
@@ -222,7 +223,9 @@ export default function HexBoard({
   }
 
   return (
-    <section className="board-shell panel">
+    <section
+      className={`${surfacePanel} relative h-full min-h-0 rounded-[1.8rem] p-[0.55rem] max-[720px]:min-h-[22rem] max-[720px]:rounded-[1.35rem]`}
+    >
       <div
         className={`board-viewport ${isDragging ? 'is-dragging' : ''} ${
           canPlay && !disabled ? '' : 'is-locked'
@@ -236,7 +239,7 @@ export default function HexBoard({
       >
         {overlay ? (
           <div
-            className="board-floating-left"
+            className="absolute top-4 left-4 z-[2] max-[720px]:top-[0.8rem] max-[720px]:left-[0.8rem]"
             onPointerDown={(event) => event.stopPropagation()}
           >
             {overlay}
@@ -244,13 +247,21 @@ export default function HexBoard({
         ) : null}
         <div
           aria-label="Zoom controls"
-          className="board-floating-controls"
+          className="absolute top-4 right-4 z-[2] inline-flex gap-[0.55rem] max-[720px]:top-[0.8rem] max-[720px]:right-[0.8rem]"
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <button onClick={() => nudgeZoom(1 / 1.15)} type="button">
+          <button
+            className={`${primaryButton} h-[2.6rem] min-h-0 w-[2.6rem] p-0 text-[1.15rem]`}
+            onClick={() => nudgeZoom(1 / 1.15)}
+            type="button"
+          >
             -
           </button>
-          <button onClick={() => nudgeZoom(1.15)} type="button">
+          <button
+            className={`${primaryButton} h-[2.6rem] min-h-0 w-[2.6rem] p-0 text-[1.15rem]`}
+            onClick={() => nudgeZoom(1.15)}
+            type="button"
+          >
             +
           </button>
         </div>

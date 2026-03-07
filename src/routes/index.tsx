@@ -4,6 +4,20 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { api } from '../../convex/_generated/api'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
+import {
+  displayTitle,
+  eyebrow,
+  errorPanel,
+  fieldLabel,
+  guestChip,
+  infoCard,
+  mutedCopy,
+  pageWrap,
+  primaryButton,
+  secondaryButton,
+  surfacePanel,
+  textInput,
+} from '../lib/ui'
 import { useVisibleHeartbeat } from '../lib/useVisibleHeartbeat'
 
 export const Route = createFileRoute('/')({
@@ -127,38 +141,46 @@ function LobbyPage() {
     })
   }
 
+  const actionCardClass = `${surfacePanel} grid content-start gap-4 rounded-[1.7rem] p-[1.4rem] max-[720px]:rounded-[1.35rem]`
+
   return (
-    <main className="page-wrap px-4 pb-12 pt-10">
-      <section className="hero-card surface-panel">
-        <p className="eyebrow">Realtime Multiplayer</p>
-        <h1 className="display-title">
+    <main className={`${pageWrap} px-4 pb-12 pt-10`}>
+      <section
+        className={`${surfacePanel} relative overflow-hidden rounded-[2rem] p-[clamp(1.6rem,3vw,2.6rem)] before:pointer-events-none before:absolute before:inset-[auto_-6rem_-8rem_auto] before:h-72 before:w-72 before:rounded-full before:bg-[radial-gradient(circle,rgba(78,174,196,0.22),transparent_70%)] before:content-['']`}
+      >
+        <p className={eyebrow}>Realtime Multiplayer</p>
+        <h1
+          className={`${displayTitle} mt-[0.15rem] mb-4 max-w-[12ch] text-[clamp(2.8rem,6vw,5.6rem)] max-[720px]:text-[clamp(2.2rem,12vw,3.6rem)]`}
+        >
           Play infinite-board hexagonal tic-tac-toe online.
         </h1>
-        <p className="hero-copy">
+        <p className="m-0 max-w-[56ch] text-[1.02rem] leading-[1.7] text-[var(--sea-ink-soft)]">
           Guest identity is automatic. Matchmaking pairs two random players, and
           private rooms can be shared with a friend or watched by spectators.
         </p>
-        <div className="hero-meta">
-          <span className="guest-chip hero-chip">
+        <div className="mt-6 flex flex-wrap gap-[0.8rem]">
+          <span
+            className={`${guestChip} bg-[color-mix(in_oklab,var(--chip-bg)_85%,white_15%)]`}
+          >
             {isLoading ? 'Creating guest…' : session?.displayName ?? 'Offline guest'}
           </span>
-          <Link className="secondary-button" to="/about">
+          <Link className={secondaryButton} to="/about">
             Review the rules
           </Link>
         </div>
       </section>
 
-      <section className="lobby-grid">
-        <article className="surface-panel action-card">
-          <p className="eyebrow">Resume</p>
-          <h2>Continue where you left off</h2>
-          <p>
+      <section className="mt-4 grid gap-4 md:grid-cols-2 max-[820px]:grid-cols-1">
+        <article className={actionCardClass}>
+          <p className={eyebrow}>Resume</p>
+          <h2 className="m-0 text-[1.35rem]">Continue where you left off</h2>
+          <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
             Active games stay resumable. If you refresh on the same device, the
             guest token reconnects you automatically.
           </p>
           {session?.activeGameId ? (
             <button
-              className="primary-button"
+              className={primaryButton}
               onClick={() =>
                 void navigate({
                   to: '/games/$gameId',
@@ -170,25 +192,25 @@ function LobbyPage() {
               Resume as {describeRole(session.activeRole)}
             </button>
           ) : (
-            <div className="empty-state">No active game attached to this guest.</div>
+            <div className={infoCard}>No active game attached to this guest.</div>
           )}
         </article>
 
-        <article className="surface-panel action-card">
-          <p className="eyebrow">Matchmaking</p>
-          <h2>Find a random opponent</h2>
-          <p>
+        <article className={actionCardClass}>
+          <p className={eyebrow}>Matchmaking</p>
+          <h2 className="m-0 text-[1.35rem]">Find a random opponent</h2>
+          <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
             Queue into the public pool and start instantly when another guest is
             waiting.
           </p>
           {matchmakingStatus?.state === 'queued' ? (
-            <div className="stack-sm">
-              <div className="notice-card">
-                <span className="status-dot is-live" />
+            <div className="grid gap-3">
+              <div className={infoCard}>
+                <span className="h-[0.7rem] w-[0.7rem] shrink-0 rounded-full bg-[#2bb57d] shadow-[0_0_0_6px_rgba(43,181,125,0.14)]" />
                 Waiting for another player to join the queue.
               </div>
               <button
-                className="secondary-button"
+                className={secondaryButton}
                 disabled={pendingAction !== null}
                 onClick={() => void handleCancelMatchmaking()}
                 type="button"
@@ -198,7 +220,7 @@ function LobbyPage() {
             </div>
           ) : (
             <button
-              className="primary-button"
+              className={primaryButton}
               disabled={pendingAction !== null || isAlreadyPlaying}
               onClick={() => void handleJoinMatchmaking()}
               type="button"
@@ -207,21 +229,21 @@ function LobbyPage() {
             </button>
           )}
           {isAlreadyPlaying ? (
-            <p className="muted-copy">
+            <p className={mutedCopy}>
               Finish or resume your current player game before starting another.
             </p>
           ) : null}
         </article>
 
-        <article className="surface-panel action-card">
-          <p className="eyebrow">Private Room</p>
-          <h2>Create a code to share</h2>
-          <p>
+        <article className={actionCardClass}>
+          <p className={eyebrow}>Private Room</p>
+          <h2 className="m-0 text-[1.35rem]">Create a code to share</h2>
+          <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
             Open a private room, send the six-character code, and let extra
             guests spectate once both seats are taken.
           </p>
           <button
-            className="primary-button"
+            className={primaryButton}
             disabled={pendingAction !== null || isAlreadyPlaying}
             onClick={() => void handleCreatePrivateGame()}
             type="button"
@@ -230,20 +252,20 @@ function LobbyPage() {
           </button>
         </article>
 
-        <article className="surface-panel action-card">
-          <p className="eyebrow">Join Room</p>
-          <h2>Enter a private code</h2>
-          <p>
+        <article className={actionCardClass}>
+          <p className={eyebrow}>Join Room</p>
+          <h2 className="m-0 text-[1.35rem]">Enter a private code</h2>
+          <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
             A waiting room joins you as a player. A full room joins you as a
             spectator.
           </p>
-          <form className="stack-sm" onSubmit={handleJoinCodeSubmit}>
-            <label className="field-label" htmlFor="room-code">
+          <form className="grid gap-3" onSubmit={handleJoinCodeSubmit}>
+            <label className={fieldLabel} htmlFor="room-code">
               Room code
             </label>
             <input
               id="room-code"
-              className="text-input"
+              className={textInput}
               maxLength={6}
               onChange={(event) =>
                 setRoomCode(
@@ -253,7 +275,7 @@ function LobbyPage() {
               placeholder="ABC123"
               value={roomCode}
             />
-            <button className="primary-button" type="submit">
+            <button className={primaryButton} type="submit">
               Join room
             </button>
           </form>
@@ -261,7 +283,7 @@ function LobbyPage() {
       </section>
 
       {error || actionError ? (
-        <section className="surface-panel error-panel">
+        <section className={`${surfacePanel} ${errorPanel}`}>
           {error ?? actionError}
         </section>
       ) : null}

@@ -4,6 +4,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { api } from '../../convex/_generated/api'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
+import { eyebrow, infoCard, pageWrap, secondaryButton, surfacePanel } from '../lib/ui'
 
 export const Route = createFileRoute('/join/$roomCode')({
   component: JoinRoomPage,
@@ -44,25 +45,27 @@ function JoinRoomPage() {
   }, [guestToken, isLoading, joinRoom, navigate, roomCode])
 
   return (
-    <main className="page-wrap px-4 py-16">
-      <section className="surface-panel action-card narrow-card">
-        <p className="eyebrow">Joining room</p>
-        <h1>Code {roomCode}</h1>
-        <p>
+    <main className={`${pageWrap} px-4 py-16`}>
+      <section
+        className={`${surfacePanel} grid max-w-[34rem] gap-4 rounded-[1.7rem] p-[1.4rem] max-[720px]:rounded-[1.35rem]`}
+      >
+        <p className={eyebrow}>Joining room</p>
+        <h1 className="m-0 text-[1.35rem]">Code {roomCode}</h1>
+        <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
           {error
             ? error
             : 'Checking the room and attaching your guest identity to the match.'}
         </p>
         {error ? (
           <button
-            className="secondary-button"
+            className={secondaryButton}
             onClick={() => void navigate({ to: '/' })}
             type="button"
           >
             Return to lobby
           </button>
         ) : (
-          <div className="empty-state">Connecting…</div>
+          <div className={infoCard}>Connecting…</div>
         )}
       </section>
     </main>

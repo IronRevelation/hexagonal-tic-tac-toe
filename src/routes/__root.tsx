@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { QueryClient } from '@tanstack/react-query'
 import {
   HeadContent,
@@ -10,7 +12,7 @@ import Footer from '../components/Footer'
 import Header from '../components/Header'
 import { GuestSessionProvider } from '../lib/GuestSessionProvider'
 
-import appCss from '../styles.css?url'
+import appCss from '../styles/app.css?url'
 
 const THEME_INIT_SCRIPT = `(function(){try{var root=document.documentElement;root.classList.remove('light');root.classList.add('dark');root.setAttribute('data-theme','dark');root.style.colorScheme='dark';window.localStorage.setItem('theme','dark')}catch(e){}})();`
 

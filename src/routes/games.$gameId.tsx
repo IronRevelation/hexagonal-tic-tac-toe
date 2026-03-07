@@ -124,111 +124,118 @@ function GamePage() {
   const waitingForOpponent = game.status === 'waiting'
   const currentPlayerLabel = describePlayer(game, currentPlayer)
   const winnerLabel = game.state.winner ? describePlayer(game, game.state.winner) : null
+  const summaryLabel = game.mode === 'private' ? 'Private Room' : 'Live Match'
   const viewerRematchRequested =
     (game.viewerRole === 'playerOne' && game.rematch.requestedByPlayerOne) ||
     (game.viewerRole === 'playerTwo' && game.rematch.requestedByPlayerTwo)
+  const rematchReadyCount =
+    Number(game.rematch.requestedByPlayerOne) + Number(game.rematch.requestedByPlayerTwo)
 
   return (
-    <main className="game-layout page-wrap px-4 pb-10 pt-8">
-      <aside className="sidebar panel">
-        <p className="eyebrow">Game status</p>
-        <h1>{game.mode === 'private' ? 'Private Room' : 'Matchmaking Game'}</h1>
-        <p className="intro">{buildTurnCopy(game, currentPlayerLabel, winnerLabel)}</p>
+    <main className="game-page px-4 py-3">
+      <section className="game-overview panel">
+        <div className="game-overview-main">
+          <div className="game-overview-start">
+            <Link to="/" className="game-wordmark">
+              <span className="brand-orb" />
+              <span>Hexagonal Tic-Tac-Toe</span>
+            </Link>
 
-        <section className="status-card">
-          <div className="status-heading">
-            <span>{viewerIsPlayer ? 'Player seat' : 'Viewing as spectator'}</span>
-            <span>Turn {game.state.turnNumber}</span>
-          </div>
-          <p className="status-copy">
-            {viewerIsPlayer
-              ? `You are ${game.viewerRole === 'playerOne' ? 'Player 1' : 'Player 2'}.`
-              : 'Spectators see the board live but cannot place moves.'}
-          </p>
-
-          <div className="player-pills">
-            <PlayerCard
-              active={currentPlayer === 'one' && game.status === 'active'}
-              label={game.players.one?.displayName ?? PLAYER_LABELS.one}
-              online={game.players.one?.isOnline ?? false}
-              role="Player 1"
-              slot="one"
-            />
-            <PlayerCard
-              active={currentPlayer === 'two' && game.status === 'active'}
-              label={game.players.two?.displayName ?? PLAYER_LABELS.two}
-              online={game.players.two?.isOnline ?? false}
-              role={game.players.two ? 'Player 2' : waitingForOpponent ? 'Waiting' : 'Player 2'}
-              slot="two"
-            />
+            <div className="header-links game-nav-links">
+              <Link
+                to="/"
+                className="nav-link"
+                activeProps={{ className: 'nav-link is-active' }}
+              >
+                Lobby
+              </Link>
+              <Link
+                to="/about"
+                className="nav-link"
+                activeProps={{ className: 'nav-link is-active' }}
+              >
+                Rules
+              </Link>
+            </div>
           </div>
 
-          <div className="meta-grid">
-            <div>
-              <span className="meta-label">Moves played</span>
-              <strong>{game.state.totalMoves}</strong>
-            </div>
-            <div>
-              <span className="meta-label">Moves left</span>
-              <strong>{game.status === 'active' ? game.state.movesRemaining : 0}</strong>
-            </div>
-            <div>
-              <span className="meta-label">Last move</span>
-              <strong>
-                {game.state.lastMove
-                  ? `${game.state.lastMove.q}, ${game.state.lastMove.r}`
-                  : 'None'}
-              </strong>
-            </div>
-            <div>
-              <span className="meta-label">Spectators</span>
-              <strong>{game.spectatorCount}</strong>
+          <div className="game-summary-card">
+            <span className="game-summary-label">{summaryLabel}</span>
+            <strong className="game-summary-title">
+              {buildTurnCopy(game, currentPlayerLabel, winnerLabel)}
+            </strong>
+            <div className="game-summary-meta">
+              {game.mode === 'private' && game.roomCode ? <span>Room {game.roomCode}</span> : null}
             </div>
           </div>
-        </section>
+
+          <div className="game-overview-end">
+            <div className="game-seats">
+              <PlayerCard
+                active={currentPlayer === 'one' && game.status === 'active'}
+                label={game.players.one?.displayName ?? PLAYER_LABELS.one}
+                note={game.players.one?.isOnline ? 'Online' : 'Offline'}
+                slot="one"
+              />
+              <PlayerCard
+                active={currentPlayer === 'two' && game.status === 'active'}
+                label={game.players.two?.displayName ?? PLAYER_LABELS.two}
+                note={
+                  game.players.two
+                    ? game.players.two.isOnline
+                      ? 'Online'
+                      : 'Offline'
+                    : waitingForOpponent
+                      ? 'Waiting to join'
+                      : 'Player 2'
+                }
+                slot="two"
+              />
+            </div>
+          </div>
+        </div>
 
         {game.mode === 'private' && game.roomCode ? (
-          <section className="setup-card">
-            <div className="section-heading">
-              <h2>Share room</h2>
-              <p>Invite a friend or open the game as a spectator.</p>
-            </div>
-            <div className="share-box">
+          <section className="game-utility-card">
+            <div className="game-utility-header">
+              <span className="game-utility-label">Share room</span>
               <strong>{game.roomCode}</strong>
-              <span>{buildShareLink(game.roomCode)}</span>
             </div>
+            <a href={buildShareLink(game.roomCode)}>{buildShareLink(game.roomCode)}</a>
           </section>
         ) : null}
 
         {game.status === 'finished' ? (
-          <section className="setup-card">
-            <div className="section-heading">
-              <h2>Rematch</h2>
-              <p>
-                {game.nextGameId
-                  ? 'A new round is ready. Redirecting everyone now.'
-                  : 'Both players must opt in before the next game begins.'}
-              </p>
+          <section className="game-utility-card">
+            <div className="game-utility-header">
+              <span className="game-utility-label">Rematch</span>
+              <span className="game-chip">{rematchReadyCount}/2 ready</span>
             </div>
-            <div className="rematch-grid">
-              <div className="notice-card">
+            <p className="game-utility-copy">
+              {game.nextGameId
+                ? 'Next round is loading.'
+                : viewerIsPlayer
+                  ? 'Opt in when you are ready.'
+                  : 'Waiting for both players to opt in.'}
+            </p>
+
+            <div className="rematch-status-row">
+              <span className="rematch-status">
                 <span
                   className={`status-dot ${
                     game.rematch.requestedByPlayerOne ? 'is-live' : 'is-idle'
                   }`}
                 />
-                {game.players.one?.displayName ?? 'Player 1'}{' '}
-                {game.rematch.requestedByPlayerOne ? 'is ready' : 'is waiting'}
-              </div>
-              <div className="notice-card">
+                {game.players.one?.displayName ?? 'Player 1'}
+              </span>
+              <span className="rematch-status">
                 <span
                   className={`status-dot ${
                     game.rematch.requestedByPlayerTwo ? 'is-live' : 'is-idle'
                   }`}
                 />
-                {game.players.two?.displayName ?? 'Player 2'}{' '}
-                {game.rematch.requestedByPlayerTwo ? 'is ready' : 'is waiting'}
-              </div>
+                {game.players.two?.displayName ?? 'Player 2'}
+              </span>
             </div>
 
             {viewerIsPlayer && !game.nextGameId ? (
@@ -241,15 +248,15 @@ function GamePage() {
                 {isUpdatingRematch
                   ? 'Updating…'
                   : viewerRematchRequested
-                    ? 'Cancel rematch request'
+                    ? 'Cancel rematch'
                     : 'Request rematch'}
               </button>
             ) : null}
           </section>
         ) : null}
+      </section>
 
-        {moveError ? <section className="surface-panel error-panel">{moveError}</section> : null}
-      </aside>
+      {moveError ? <section className="surface-panel error-panel">{moveError}</section> : null}
 
       <HexBoard
         canPlay={game.viewerCanMove && !waitingForOpponent}
@@ -264,25 +271,21 @@ function GamePage() {
 function PlayerCard({
   active,
   label,
-  online,
-  role,
+  note,
   slot,
 }: {
   active: boolean
   label: string
-  online: boolean
-  role: string
+  note: string
   slot: PlayerSlot
 }) {
   return (
-    <div className={`player-pill ${active ? 'is-active' : ''} player-${slot}`}>
-      <div className="player-pill-copy">
+    <div className={`player-seat ${active ? 'is-active' : ''} player-${slot}`}>
+      <span className="player-seat-mark">{slot === 'one' ? 'X' : 'O'}</span>
+      <div className="player-seat-copy">
         <strong>{label}</strong>
-        <span className="player-pill-role">
-          {role} · {online ? 'Online' : 'Offline'}
-        </span>
+        <span className="player-seat-note">{note}</span>
       </div>
-      <span className="player-pill-mark">{slot === 'one' ? 'X' : 'O'}</span>
     </div>
   )
 }
@@ -304,9 +307,11 @@ function buildTurnCopy(
     return `${winnerLabel} wins with six in a row.`
   }
 
-  return `${currentPlayerLabel} to move with ${game.state.movesRemaining} ${
-    game.state.movesRemaining === 1 ? 'placement' : 'placements'
-  } left this turn.`
+  if (game.status === 'finished') {
+    return 'Game finished.'
+  }
+
+  return `${currentPlayerLabel} to move.`
 }
 
 function buildShareLink(roomCode: string) {

@@ -1,5 +1,14 @@
+import { useRouterState } from '@tanstack/react-router'
+
 export default function Footer() {
   const year = new Date().getFullYear()
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
+  if (pathname.startsWith('/games/')) {
+    return null
+  }
 
   return (
     <footer className="site-footer px-4 pb-10 pt-8 text-[var(--sea-ink-soft)]">

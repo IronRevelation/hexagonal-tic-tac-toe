@@ -1,9 +1,15 @@
-import { Link } from '@tanstack/react-router'
-import ThemeToggle from './ThemeToggle'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 
 export default function Header() {
   const { session } = useGuestSession()
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
+  if (pathname.startsWith('/games/')) {
+    return null
+  }
 
   return (
     <header className="site-header px-4">
@@ -36,7 +42,6 @@ export default function Header() {
           <span className="guest-chip">
             {session ? `Guest: ${session.displayName}` : 'Creating guest…'}
           </span>
-          <ThemeToggle />
         </div>
       </nav>
     </header>

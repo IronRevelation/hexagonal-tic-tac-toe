@@ -368,6 +368,7 @@ a {
 .secondary-button,
 .ghost-button,
 .zoom-controls button,
+.board-floating-controls button,
 button {
   display: inline-flex;
   align-items: center;
@@ -383,7 +384,8 @@ button {
 }
 
 .primary-button,
-.zoom-controls button {
+.zoom-controls button,
+.board-floating-controls button {
   color: #0f1820;
   background: linear-gradient(135deg, var(--amber), color-mix(in oklab, var(--amber) 70%, white));
   box-shadow: 0 14px 28px rgba(217, 135, 29, 0.22);
@@ -473,6 +475,201 @@ button:disabled,
   display: grid;
   grid-template-columns: minmax(19rem, 25rem) minmax(0, 1fr);
   gap: 1rem;
+}
+
+.game-page {
+  width: calc(100% - 2rem);
+  max-width: 1680px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.6rem;
+  height: 100dvh;
+}
+
+.game-overview {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 1.8rem;
+}
+
+.game-overview-main {
+  display: grid;
+  grid-template-columns: auto minmax(16rem, 28rem) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.game-overview-start,
+.game-overview-end {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.game-overview-end {
+  justify-self: end;
+  justify-content: flex-end;
+}
+
+.game-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--sea-ink);
+  text-decoration: none;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.game-nav-links {
+  justify-content: flex-start;
+}
+
+.game-summary-card {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+  padding-inline: 0.2rem;
+}
+
+.game-summary-label {
+  color: var(--sea-ink-soft);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.game-summary-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.game-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  color: var(--sea-ink-soft);
+  font-size: 0.78rem;
+}
+
+.game-seats {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.player-seat {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 9.6rem;
+  padding: 0.1rem 0;
+}
+
+.player-seat.is-active {
+  color: var(--sea-ink);
+}
+
+.player-seat-mark {
+  width: 1.45rem;
+  height: 1.45rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sea-ink-soft);
+  font-weight: 800;
+  flex: none;
+  transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.player-seat.player-one.is-active .player-seat-mark {
+  background: rgba(255, 184, 92, 0.18);
+  color: #ffb85c;
+  box-shadow: 0 0 0 1px rgba(255, 184, 92, 0.22);
+}
+
+.player-seat.player-two.is-active .player-seat-mark {
+  background: rgba(78, 174, 196, 0.18);
+  color: #4eaec4;
+  box-shadow: 0 0 0 1px rgba(78, 174, 196, 0.22);
+}
+
+.player-seat-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.player-seat-copy strong {
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.player-seat-note {
+  color: var(--sea-ink-soft);
+  font-size: 0.7rem;
+}
+
+.game-overview-end > .rounded-full,
+.game-overview-end > button {
+  box-shadow: none;
+}
+
+.game-utility-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1.2rem;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--surface) 84%, transparent 16%);
+}
+
+.game-utility-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.game-utility-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--sea-ink-soft);
+}
+
+.game-utility-copy {
+  margin: 0;
+  color: var(--sea-ink-soft);
+  font-size: 0.92rem;
+}
+
+.rematch-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.rematch-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.3rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--surface) 80%, transparent 20%);
+  font-size: 0.9rem;
 }
 
 .sidebar {
@@ -647,37 +844,23 @@ button:disabled,
 }
 
 .board-shell {
+  position: relative;
   min-height: 0;
-  padding: 0.9rem;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 0.8rem;
+  height: 100%;
+  padding: 0.55rem;
   border-radius: 1.8rem;
 }
 
-.board-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.4rem 0.4rem 0 0.4rem;
-}
-
-.toolbar-label {
-  margin: 0 0 0.2rem;
-  color: var(--sea-ink-soft);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.toolbar-copy {
-  margin: 0.25rem 0 0;
-  color: var(--sea-ink-soft);
-  font-size: 0.92rem;
-}
-
 .zoom-controls {
+  display: inline-flex;
+  gap: 0.55rem;
+}
+
+.board-floating-controls {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
   display: inline-flex;
   gap: 0.55rem;
 }
@@ -689,8 +872,16 @@ button:disabled,
   font-size: 1.15rem;
 }
 
+.board-floating-controls button {
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+  font-size: 1.15rem;
+}
+
 .board-viewport {
   position: relative;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   border-radius: 1.45rem;
@@ -819,8 +1010,22 @@ button:disabled,
 }
 
 @media (max-width: 1080px) {
-  .game-layout {
+  .game-page {
+    width: min(100%, calc(100% - 2rem));
+    min-height: 100dvh;
+  }
+
+  .game-overview-main {
     grid-template-columns: 1fr;
+  }
+
+  .game-overview-start,
+  .game-overview-end {
+    justify-content: flex-start;
+  }
+
+  .game-overview-end {
+    justify-self: stretch;
   }
 }
 
@@ -837,6 +1042,10 @@ button:disabled,
 
   .lobby-grid {
     grid-template-columns: 1fr;
+  }
+
+  .game-seats {
+    justify-content: flex-start;
   }
 }
 
@@ -855,16 +1064,36 @@ button:disabled,
     border-radius: 1.35rem;
   }
 
-  .board-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
+  .game-page {
+    width: min(100%, calc(100% - 1rem));
+    min-height: 100dvh;
   }
 
-  .zoom-controls {
+  .game-overview-main,
+  .game-overview-end {
+    gap: 0.6rem;
+  }
+
+  .game-overview-start {
+    gap: 0.75rem;
+  }
+
+  .game-summary-title {
+    white-space: normal;
+  }
+
+  .player-seat {
+    min-width: 0;
     width: 100%;
   }
 
-  .zoom-controls button {
-    flex: 1;
+  .board-shell,
+  .board-viewport {
+    min-height: 22rem;
+  }
+
+  .board-floating-controls {
+    top: 0.8rem;
+    right: 0.8rem;
   }
 }

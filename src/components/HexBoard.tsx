@@ -3,7 +3,6 @@ import {
   useRef,
   useState,
   type PointerEvent,
-  type WheelEvent,
 } from 'react'
 import { PLAYER_MARKS, coordKey, type HexCoord, type SerializedGameState } from '../../shared/hexGame'
 
@@ -49,6 +48,7 @@ export default function HexBoard({
   const [isDragging, setIsDragging] = useState(false)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const cameraRef = useRef(INITIAL_CAMERA)
+  const viewportRef = useRef<ViewportSize>({ width: 0, height: 0 })
   const dragStateRef = useRef<DragState | null>(null)
   const board = new Map(state.board)
   const winningKeys = new Set(state.winningLine.map(coordKey))
@@ -66,14 +66,32 @@ export default function HexBoard({
         return
       }
 
-      setViewport({
+      const nextViewport = {
         width: entry.contentRect.width,
         height: entry.contentRect.height,
-      })
+      }
+
+      viewportRef.current = nextViewport
+      setViewport(nextViewport)
     })
 
     observer.observe(boardElement)
     return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const boardElement = boardRef.current
+    if (!boardElement) {
+      return
+    }
+
+    function handleNativeWheel(event: globalThis.WheelEvent) {
+      event.preventDefault()
+      applyWheelZoom(event.deltaY, event.clientX, event.clientY)
+    }
+
+    boardElement.addEventListener('wheel', handleNativeWheel, { passive: false })
+    return () => boardElement.removeEventListener('wheel', handleNativeWheel)
   }, [])
 
   const worldWidth = viewport.width > 0 ? viewport.width / camera.zoom : 1200
@@ -159,20 +177,21 @@ export default function HexBoard({
     }
   }
 
-  function handleWheel(event: WheelEvent<HTMLDivElement>) {
-    event.preventDefault()
-    if (viewport.width === 0 || viewport.height === 0) {
+  function applyWheelZoom(deltaY: number, clientX: number, clientY: number) {
+    const boardElement = boardRef.current
+    const nextViewport = viewportRef.current
+    if (!boardElement || nextViewport.width === 0 || nextViewport.height === 0) {
       return
     }
 
-    const rect = event.currentTarget.getBoundingClientRect()
-    const screenX = event.clientX - rect.left
-    const screenY = event.clientY - rect.top
-    const zoomFactor = Math.exp(-event.deltaY * 0.0012)
+    const rect = boardElement.getBoundingClientRect()
+    const screenX = clientX - rect.left
+    const screenY = clientY - rect.top
+    const zoomFactor = Math.exp(-deltaY * 0.0012)
     const nextZoom = clamp(cameraRef.current.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM)
     const nextCamera = zoomCameraAtPoint(
       cameraRef.current,
-      viewport,
+      nextViewport,
       screenX,
       screenY,
       nextZoom,
@@ -202,28 +221,6 @@ export default function HexBoard({
 
   return (
     <section className="board-shell panel">
-      <div className="board-toolbar">
-        <div>
-          <p className="toolbar-label">Viewport</p>
-          <strong>Drag to pan, wheel or buttons to zoom</strong>
-          <p className="toolbar-copy">
-            {disabled
-              ? 'Board is read-only while the game state updates.'
-              : canPlay
-                ? 'Click any empty hex to place a stone.'
-                : 'You can spectate freely while the current player moves.'}
-          </p>
-        </div>
-        <div className="zoom-controls" aria-label="Zoom controls">
-          <button onClick={() => nudgeZoom(1 / 1.15)} type="button">
-            -
-          </button>
-          <button onClick={() => nudgeZoom(1.15)} type="button">
-            +
-          </button>
-        </div>
-      </div>
-
       <div
         className={`board-viewport ${isDragging ? 'is-dragging' : ''} ${
           canPlay && !disabled ? '' : 'is-locked'
@@ -233,9 +230,16 @@ export default function HexBoard({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointerGesture}
-        onWheel={handleWheel}
         ref={boardRef}
       >
+        <div className="board-floating-controls" aria-label="Zoom controls">
+          <button onClick={() => nudgeZoom(1 / 1.15)} type="button">
+            -
+          </button>
+          <button onClick={() => nudgeZoom(1.15)} type="button">
+            +
+          </button>
+        </div>
         <svg
           aria-label="Hexagonal tic-tac-toe board"
           className="board-svg"

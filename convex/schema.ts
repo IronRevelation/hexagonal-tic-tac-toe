@@ -8,6 +8,11 @@ const gameStatus = v.union(
   v.literal('active'),
   v.literal('finished'),
 )
+const gameFinishReason = v.union(
+  v.literal('line'),
+  v.literal('forfeit'),
+  v.literal('drawAgreement'),
+)
 const participantRole = v.union(
   v.literal('playerOne'),
   v.literal('playerTwo'),
@@ -52,6 +57,7 @@ export default defineSchema({
     playerTwoGuestId: v.optional(v.id('guests')),
     serializedState: storedGameState,
     winnerSlot: v.optional(playerSlot),
+    finishReason: v.optional(gameFinishReason),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
     updatedAt: v.number(),
@@ -60,6 +66,10 @@ export default defineSchema({
     nextGameId: v.optional(v.id('games')),
     rematchRequestedByPlayerOne: v.boolean(),
     rematchRequestedByPlayerTwo: v.boolean(),
+    drawOfferedBy: v.optional(playerSlot),
+    drawOfferedAtMoveIndex: v.optional(v.number()),
+    nextDrawOfferMoveIndexPlayerOne: v.optional(v.number()),
+    nextDrawOfferMoveIndexPlayerTwo: v.optional(v.number()),
   })
     .index('by_roomCode', ['roomCode'])
     .index('by_playerOneGuestId', ['playerOneGuestId'])

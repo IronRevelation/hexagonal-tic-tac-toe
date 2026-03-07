@@ -2,7 +2,10 @@ import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import {
   buildGameSnapshot,
+  clearDrawOfferFields,
   createStoredInitialState,
+  drawOfferCooldownPatch,
+  DRAW_OFFER_COOLDOWN_MOVES,
   ensureGuest,
   fromStoredState,
   getGuestByToken,
@@ -14,7 +17,7 @@ import {
   throwGameError,
   toStoredState,
 } from './lib'
-import { applyMove, coordKey, serializeGameState } from '../shared/hexGame'
+import { applyMove, coordKey, opponentOf, serializeGameState } from '../shared/hexGame'
 
 export const resumeForGuest = query({
   args: {
@@ -99,6 +102,14 @@ export const placeMove = mutation({
       throwGameError('CELL_OCCUPIED', 'That hexagon is already occupied.')
     }
 
+    const pendingDrawOfferedBy = game.drawOfferedBy ?? null
+    const pendingDrawPatch =
+      pendingDrawOfferedBy === null
+        ? {}
+        : {
+            ...clearDrawOfferFields(),
+            ...drawOfferCooldownPatch(pendingDrawOfferedBy, state.totalMoves),
+          }
     const nextState = applyMove(state, args.coord)
     const timestamp = now()
     const nextSerializedState = serializeGameState(nextState)
@@ -116,15 +127,182 @@ export const placeMove = mutation({
     await ctx.db.patch(game._id, {
       serializedState: toStoredState(nextSerializedState),
       winnerSlot: nextState.winner ?? undefined,
+      finishReason: nextState.winner ? 'line' : undefined,
       status: nextState.winner ? 'finished' : 'active',
       finishedAt: nextState.winner ? timestamp : undefined,
       updatedAt: timestamp,
+      ...pendingDrawPatch,
+      ...(nextState.winner ? clearDrawOfferFields() : {}),
     })
 
     return {
       ok: true,
       winner: nextState.winner,
     }
+  },
+})
+
+export const forfeitGame = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await ensureGuest(ctx, args.guestToken)
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      throwGameError('GAME_NOT_FOUND', 'Game not found.')
+    }
+    if (game.status !== 'active') {
+      throwGameError('GAME_FINISHED', 'This game is no longer active.')
+    }
+
+    const participant = await getParticipant(ctx.db, game._id, guest._id)
+    if (!participant) {
+      throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
+    }
+
+    const slot = requirePlayerRole(participant.role)
+    const timestamp = now()
+
+    await ctx.db.patch(game._id, {
+      winnerSlot: opponentOf(slot),
+      finishReason: 'forfeit',
+      status: 'finished',
+      finishedAt: timestamp,
+      updatedAt: timestamp,
+      ...clearDrawOfferFields(),
+    })
+
+    return { ok: true }
+  },
+})
+
+export const offerDraw = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await ensureGuest(ctx, args.guestToken)
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      throwGameError('GAME_NOT_FOUND', 'Game not found.')
+    }
+    if (game.status !== 'active') {
+      throwGameError('GAME_FINISHED', 'This game is no longer active.')
+    }
+    if (game.drawOfferedBy) {
+      throwGameError('DRAW_ALREADY_PENDING', 'A draw offer is already pending.')
+    }
+
+    const participant = await getParticipant(ctx.db, game._id, guest._id)
+    if (!participant) {
+      throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
+    }
+
+    const slot = requirePlayerRole(participant.role)
+    const state = loadGameState(game)
+    const minMoveIndex =
+      slot === 'one'
+        ? game.nextDrawOfferMoveIndexPlayerOne ?? 0
+        : game.nextDrawOfferMoveIndexPlayerTwo ?? 0
+
+    if (state.totalMoves < minMoveIndex) {
+      throwGameError(
+        'DRAW_NOT_ALLOWED',
+        `Draw offers are available every ${DRAW_OFFER_COOLDOWN_MOVES} moves.`,
+      )
+    }
+
+    await ctx.db.patch(game._id, {
+      drawOfferedBy: slot,
+      drawOfferedAtMoveIndex: state.totalMoves,
+      updatedAt: now(),
+    })
+
+    return { ok: true }
+  },
+})
+
+export const acceptDraw = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await ensureGuest(ctx, args.guestToken)
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      throwGameError('GAME_NOT_FOUND', 'Game not found.')
+    }
+    if (game.status !== 'active') {
+      throwGameError('GAME_FINISHED', 'This game is no longer active.')
+    }
+    if (!game.drawOfferedBy) {
+      throwGameError('DRAW_NOT_PENDING', 'There is no pending draw offer.')
+    }
+
+    const participant = await getParticipant(ctx.db, game._id, guest._id)
+    if (!participant) {
+      throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
+    }
+
+    const slot = requirePlayerRole(participant.role)
+    if (game.drawOfferedBy === slot) {
+      throwGameError('DRAW_NOT_ALLOWED', 'You cannot accept your own draw offer.')
+    }
+
+    const timestamp = now()
+    await ctx.db.patch(game._id, {
+      winnerSlot: undefined,
+      finishReason: 'drawAgreement',
+      status: 'finished',
+      finishedAt: timestamp,
+      updatedAt: timestamp,
+      ...clearDrawOfferFields(),
+    })
+
+    return { ok: true }
+  },
+})
+
+export const declineDraw = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await ensureGuest(ctx, args.guestToken)
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      throwGameError('GAME_NOT_FOUND', 'Game not found.')
+    }
+    if (game.status !== 'active') {
+      throwGameError('GAME_FINISHED', 'This game is no longer active.')
+    }
+    if (!game.drawOfferedBy) {
+      throwGameError('DRAW_NOT_PENDING', 'There is no pending draw offer.')
+    }
+
+    const participant = await getParticipant(ctx.db, game._id, guest._id)
+    if (!participant) {
+      throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
+    }
+
+    const slot = requirePlayerRole(participant.role)
+    if (game.drawOfferedBy === slot) {
+      throwGameError('DRAW_NOT_ALLOWED', 'You cannot decline your own draw offer.')
+    }
+
+    const state = loadGameState(game)
+    await ctx.db.patch(game._id, {
+      updatedAt: now(),
+      ...clearDrawOfferFields(),
+      ...drawOfferCooldownPatch(game.drawOfferedBy, state.totalMoves),
+    })
+
+    return { ok: true }
   },
 })
 
@@ -188,6 +366,8 @@ export const requestRematch = mutation({
       previousGameId: game._id,
       rematchRequestedByPlayerOne: false,
       rematchRequestedByPlayerTwo: false,
+      nextDrawOfferMoveIndexPlayerOne: 0,
+      nextDrawOfferMoveIndexPlayerTwo: 0,
     })
 
     await ctx.db.patch(game._id, {

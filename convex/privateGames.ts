@@ -30,6 +30,8 @@ export const create = mutation({
       updatedAt: timestamp,
       rematchRequestedByPlayerOne: false,
       rematchRequestedByPlayerTwo: false,
+      nextDrawOfferMoveIndexPlayerOne: 0,
+      nextDrawOfferMoveIndexPlayerTwo: 0,
     })
     const roomCode = await createUniqueRoomCode(ctx.db, String(gameId))
 

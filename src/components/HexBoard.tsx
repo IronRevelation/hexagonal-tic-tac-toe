@@ -37,11 +37,13 @@ export default function HexBoard({
   canPlay,
   disabled,
   onSelect,
+  overlay,
 }: {
   state: SerializedGameState
   canPlay: boolean
   disabled: boolean
   onSelect: (coord: HexCoord) => void
+  overlay?: React.ReactNode
 }) {
   const [camera, setCamera] = useState(INITIAL_CAMERA)
   const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: 0 })
@@ -232,7 +234,19 @@ export default function HexBoard({
         onPointerUp={finishPointerGesture}
         ref={boardRef}
       >
-        <div className="board-floating-controls" aria-label="Zoom controls">
+        {overlay ? (
+          <div
+            className="board-floating-left"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {overlay}
+          </div>
+        ) : null}
+        <div
+          aria-label="Zoom controls"
+          className="board-floating-controls"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <button onClick={() => nudgeZoom(1 / 1.15)} type="button">
             -
           </button>

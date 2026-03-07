@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Flag, Handshake } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
 import type { GameSnapshot } from '../../shared/contracts'
 import { PLAYER_LABELS, type HexCoord, type PlayerSlot } from '../../shared/hexGame'
@@ -21,6 +22,10 @@ function GamePage() {
   const [moveError, setMoveError] = useState<string | null>(null)
   const [isSubmittingMove, setIsSubmittingMove] = useState(false)
   const [isUpdatingRematch, setIsUpdatingRematch] = useState(false)
+  const [isOfferingDraw, setIsOfferingDraw] = useState(false)
+  const [isRespondingToDraw, setIsRespondingToDraw] = useState(false)
+  const [isForfeitingGame, setIsForfeitingGame] = useState(false)
+  const [isConfirmingForfeit, setIsConfirmingForfeit] = useState(false)
   const [isLeavingGame, setIsLeavingGame] = useState(false)
   const game = useQuery(
     api.games.byIdForGuest,
@@ -29,6 +34,10 @@ function GamePage() {
   const placeMove = useMutation(api.games.placeMove)
   const requestRematch = useMutation(api.games.requestRematch)
   const cancelRematch = useMutation(api.games.cancelRematch)
+  const offerDraw = useMutation(api.games.offerDraw)
+  const acceptDraw = useMutation(api.games.acceptDraw)
+  const declineDraw = useMutation(api.games.declineDraw)
+  const forfeitGame = useMutation(api.games.forfeitGame)
   const leaveFinishedGame = useMutation(api.guests.leaveFinishedGame)
 
   useVisibleHeartbeat(guestToken, gameId)
@@ -114,6 +123,79 @@ function GamePage() {
     }
   }
 
+  async function handleOfferDraw() {
+    if (!guestToken || !game) {
+      return
+    }
+
+    setIsOfferingDraw(true)
+    setMoveError(null)
+
+    try {
+      await offerDraw({
+        guestToken,
+        gameId: asGameId(gameId),
+      })
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to offer a draw.'))
+    } finally {
+      setIsOfferingDraw(false)
+    }
+  }
+
+  async function handleDrawResponse(action: 'accept' | 'decline') {
+    if (!guestToken || !game) {
+      return
+    }
+
+    setIsRespondingToDraw(true)
+    setMoveError(null)
+
+    try {
+      if (action === 'accept') {
+        await acceptDraw({
+          guestToken,
+          gameId: asGameId(gameId),
+        })
+      } else {
+        await declineDraw({
+          guestToken,
+          gameId: asGameId(gameId),
+        })
+      }
+    } catch (cause) {
+      setMoveError(
+        getConvexErrorMessage(
+          cause,
+          action === 'accept' ? 'Unable to accept the draw.' : 'Unable to decline the draw.',
+        ),
+      )
+    } finally {
+      setIsRespondingToDraw(false)
+    }
+  }
+
+  async function handleConfirmForfeit() {
+    if (!guestToken || !game) {
+      return
+    }
+
+    setIsForfeitingGame(true)
+    setMoveError(null)
+
+    try {
+      await forfeitGame({
+        guestToken,
+        gameId: asGameId(gameId),
+      })
+      setIsConfirmingForfeit(false)
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to forfeit the game.'))
+    } finally {
+      setIsForfeitingGame(false)
+    }
+  }
+
   if (isGuestLoading || game === undefined) {
     return (
       <main className="page-wrap px-4 py-16">
@@ -145,7 +227,8 @@ function GamePage() {
     game.viewerRole === 'playerOne' || game.viewerRole === 'playerTwo'
   const waitingForOpponent = game.status === 'waiting'
   const currentPlayerLabel = describePlayer(game, currentPlayer)
-  const winnerLabel = game.state.winner ? describePlayer(game, game.state.winner) : null
+  const winnerSlot = game.state.winner ?? game.winnerSlot
+  const winnerLabel = winnerSlot ? describePlayer(game, winnerSlot) : null
   const summaryLabel = game.mode === 'private' ? 'Private Room' : 'Live Match'
   const viewerSlot =
     game.viewerRole === 'playerOne' ? 'one' : game.viewerRole === 'playerTwo' ? 'two' : null
@@ -157,6 +240,29 @@ function GamePage() {
     (game.viewerRole === 'playerTwo' && game.rematch.requestedByPlayerTwo)
   const rematchReadyCount =
     Number(game.rematch.requestedByPlayerOne) + Number(game.rematch.requestedByPlayerTwo)
+  const pendingDrawOfferedBy = game.drawOffer.offeredBy
+  const incomingDrawOffer =
+    viewerIsPlayer &&
+    viewerSlot !== null &&
+    pendingDrawOfferedBy !== null &&
+    pendingDrawOfferedBy !== viewerSlot
+  const outgoingDrawOffer =
+    viewerIsPlayer && viewerSlot !== null && pendingDrawOfferedBy === viewerSlot
+  const drawOfferPlayerLabel =
+    pendingDrawOfferedBy ? describePlayer(game, pendingDrawOfferedBy) : null
+  const nextDrawOfferMoveIndex =
+    viewerSlot === 'one'
+      ? game.drawOffer.minMoveIndexForPlayerOne
+      : viewerSlot === 'two'
+        ? game.drawOffer.minMoveIndexForPlayerTwo
+        : 0
+  const remainingDrawMoves = Math.max(0, nextDrawOfferMoveIndex - game.state.totalMoves)
+  const canOfferDraw =
+    viewerIsPlayer &&
+    game.status === 'active' &&
+    !waitingForOpponent &&
+    pendingDrawOfferedBy === null &&
+    remainingDrawMoves === 0
   const opponentLeft =
     game.status === 'finished' &&
     viewerIsPlayer &&
@@ -238,6 +344,41 @@ function GamePage() {
           </section>
         ) : null}
 
+        {incomingDrawOffer ? (
+          <section className="game-alert-strip">
+            <div>
+              <strong>Draw offered by {drawOfferPlayerLabel}</strong>
+              <p>Accept to end the game as a draw, or decline and keep playing.</p>
+            </div>
+            <div className="game-alert-actions">
+              <button
+                className="primary-button"
+                disabled={isRespondingToDraw}
+                onClick={() => void handleDrawResponse('accept')}
+                type="button"
+              >
+                {isRespondingToDraw ? 'Updating...' : 'Accept'}
+              </button>
+              <button
+                className="secondary-button"
+                disabled={isRespondingToDraw}
+                onClick={() => void handleDrawResponse('decline')}
+                type="button"
+              >
+                Decline
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {outgoingDrawOffer ? (
+          <section className="game-alert-strip is-passive">
+            <div>
+              <strong>Draw offer sent</strong>
+              <p>Waiting for your opponent to respond.</p>
+            </div>
+          </section>
+        ) : null}
       </section>
 
       {moveError ? <section className="surface-panel error-panel">{moveError}</section> : null}
@@ -246,6 +387,47 @@ function GamePage() {
         canPlay={game.viewerCanMove && !waitingForOpponent}
         disabled={isSubmittingMove || game.status !== 'active'}
         onSelect={handleSelect}
+        overlay={
+          viewerIsPlayer && game.status === 'active' ? (
+            <div className="game-board-actions">
+              <button
+                aria-label={
+                  pendingDrawOfferedBy === null && remainingDrawMoves > 0
+                    ? `Offer draw available in ${remainingDrawMoves} moves`
+                    : isOfferingDraw
+                      ? 'Sending draw offer'
+                      : 'Offer draw'
+                }
+                className="board-icon-button"
+                disabled={!canOfferDraw || isOfferingDraw}
+                onClick={() => void handleOfferDraw()}
+                title={
+                  pendingDrawOfferedBy === null && remainingDrawMoves > 0
+                    ? `Offer draw available in ${remainingDrawMoves} moves`
+                    : 'Offer draw'
+                }
+                type="button"
+              >
+                <Handshake size={16} strokeWidth={2.2} />
+              </button>
+              <button
+                aria-label="Forfeit game"
+                className="board-icon-button is-danger"
+                disabled={isForfeitingGame}
+                onClick={() => setIsConfirmingForfeit(true)}
+                title="Forfeit"
+                type="button"
+              >
+                <Flag size={16} strokeWidth={2.2} />
+              </button>
+              {pendingDrawOfferedBy === null && remainingDrawMoves > 0 ? (
+                <span className="board-action-hint">
+                  Draw in {remainingDrawMoves}
+                </span>
+              ) : null}
+            </div>
+          ) : null
+        }
         state={game.state}
       />
 
@@ -258,9 +440,13 @@ function GamePage() {
             role="dialog"
           >
             <p className="game-result-kicker">Game Over</p>
-            <h2 id="game-result-title">{winnerLabel ?? 'Player'} won!</h2>
+            <h2 id="game-result-title">{buildFinishedTitle(game, winnerLabel)}</h2>
             <p className="game-result-copy">
-              {opponentLeft
+              {game.finishReason === 'drawAgreement'
+                ? 'Both players agreed to a draw.'
+                : game.finishReason === 'forfeit'
+                  ? `${winnerLabel ?? 'A player'} won by forfeit.`
+                  : opponentLeft
                 ? `${opponentPresence?.displayName ?? 'The other player'} left the game.`
                 : game.nextGameId
                 ? 'Starting the rematch now.'
@@ -293,6 +479,39 @@ function GamePage() {
                 type="button"
               >
                 {isLeavingGame ? 'Leaving...' : 'Leave'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isConfirmingForfeit ? (
+        <div className="game-result-overlay" role="presentation">
+          <section
+            aria-labelledby="forfeit-title"
+            aria-modal="true"
+            className="game-result-modal panel"
+            role="dialog"
+          >
+            <p className="game-result-kicker">Confirm</p>
+            <h2 id="forfeit-title">Forfeit game?</h2>
+            <p className="game-result-copy">This ends the game immediately and counts as a loss.</p>
+            <div className="game-result-actions">
+              <button
+                className="secondary-button"
+                disabled={isForfeitingGame}
+                onClick={() => setIsConfirmingForfeit(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button danger-button"
+                disabled={isForfeitingGame}
+                onClick={() => void handleConfirmForfeit()}
+                type="button"
+              >
+                {isForfeitingGame ? 'Forfeiting...' : 'Forfeit'}
               </button>
             </div>
           </section>
@@ -338,7 +557,13 @@ function buildTurnCopy(
   }
 
   if (winnerLabel) {
-    return `${winnerLabel} wins with six in a row.`
+    return game.finishReason === 'forfeit'
+      ? `${winnerLabel} wins by forfeit.`
+      : `${winnerLabel} wins with six in a row.`
+  }
+
+  if (game.finishReason === 'drawAgreement') {
+    return 'Draw agreed.'
   }
 
   if (game.status === 'finished') {
@@ -346,6 +571,14 @@ function buildTurnCopy(
   }
 
   return `${currentPlayerLabel} to move.`
+}
+
+function buildFinishedTitle(game: GameSnapshot, winnerLabel: string | null) {
+  if (game.finishReason === 'drawAgreement') {
+    return 'Draw'
+  }
+
+  return `${winnerLabel ?? 'Player'} won!`
 }
 
 function buildShareLink(roomCode: string) {

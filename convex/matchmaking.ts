@@ -79,6 +79,8 @@ export const join = mutation({
       updatedAt: timestamp,
       rematchRequestedByPlayerOne: false,
       rematchRequestedByPlayerTwo: false,
+      nextDrawOfferMoveIndexPlayerOne: 0,
+      nextDrawOfferMoveIndexPlayerTwo: 0,
     })
 
     await ctx.db.patch(gameId, {

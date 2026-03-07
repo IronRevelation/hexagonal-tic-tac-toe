@@ -3,6 +3,7 @@ import type { HexCoord, PlayerSlot, SerializedGameState } from './hexGame'
 export type GameMode = 'matchmaking' | 'private'
 export type GameStatus = 'waiting' | 'active' | 'finished'
 export type ParticipantRole = 'playerOne' | 'playerTwo' | 'spectator'
+export type GameFinishReason = 'line' | 'forfeit' | 'drawAgreement'
 
 export type GuestSession = {
   guestToken: string
@@ -17,6 +18,13 @@ export type RematchState = {
   nextGameId: string | null
 }
 
+export type DrawOfferState = {
+  offeredBy: PlayerSlot | null
+  offeredAtMoveIndex: number | null
+  minMoveIndexForPlayerOne: number
+  minMoveIndexForPlayerTwo: number
+}
+
 export type PlayerPresence = {
   guestId: string
   displayName: string
@@ -28,6 +36,8 @@ export type GameSnapshot = {
   gameId: string
   mode: GameMode
   status: GameStatus
+  finishReason: GameFinishReason | null
+  winnerSlot: PlayerSlot | null
   roomCode: string | null
   seriesId: string | null
   previousGameId: string | null
@@ -40,6 +50,7 @@ export type GameSnapshot = {
   players: Record<PlayerSlot, PlayerPresence | null>
   spectatorCount: number
   rematch: RematchState
+  drawOffer: DrawOfferState
   updatedAt: number
 }
 

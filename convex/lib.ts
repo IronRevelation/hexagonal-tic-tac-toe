@@ -10,6 +10,8 @@ import {
   type SerializedGameState,
 } from '../shared/hexGame'
 import type {
+  DrawOfferState,
+  GameFinishReason,
   GameMode,
   GameSnapshot,
   GameStatus,
@@ -56,6 +58,7 @@ const ANIMALS = [
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ONLINE_WINDOW_MS = 45_000
+export const DRAW_OFFER_COOLDOWN_MOVES = 8
 
 export type GuestDoc = Doc<'guests'>
 export type GameDoc = Doc<'games'>
@@ -228,6 +231,24 @@ export function isOnline(lastSeenAt: number) {
   return now() - lastSeenAt < ONLINE_WINDOW_MS
 }
 
+export function clearDrawOfferFields() {
+  return {
+    drawOfferedBy: undefined,
+    drawOfferedAtMoveIndex: undefined,
+  }
+}
+
+export function drawOfferCooldownPatch(
+  slot: PlayerSlot,
+  fromMoveIndex: number,
+) {
+  const nextMoveIndex = fromMoveIndex + DRAW_OFFER_COOLDOWN_MOVES
+
+  return slot === 'one'
+    ? { nextDrawOfferMoveIndexPlayerOne: nextMoveIndex }
+    : { nextDrawOfferMoveIndexPlayerTwo: nextMoveIndex }
+}
+
 export function chooseOpeningOrder(
   firstGuestId: Id<'guests'>,
   secondGuestId: Id<'guests'>,
@@ -300,6 +321,8 @@ export async function buildGameSnapshot(
     gameId: game._id,
     mode: game.mode as GameMode,
     status: game.status as GameStatus,
+    finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
+    winnerSlot: game.winnerSlot ?? null,
     roomCode: game.roomCode ?? null,
     seriesId: game.seriesId ?? null,
     previousGameId: game.previousGameId ?? null,
@@ -319,6 +342,12 @@ export async function buildGameSnapshot(
       requestedByPlayerTwo: game.rematchRequestedByPlayerTwo,
       nextGameId: game.nextGameId ?? null,
     },
+    drawOffer: {
+      offeredBy: game.drawOfferedBy ?? null,
+      offeredAtMoveIndex: game.drawOfferedAtMoveIndex ?? null,
+      minMoveIndexForPlayerOne: game.nextDrawOfferMoveIndexPlayerOne ?? 0,
+      minMoveIndexForPlayerTwo: game.nextDrawOfferMoveIndexPlayerTwo ?? 0,
+    } satisfies DrawOfferState,
     updatedAt: game.updatedAt,
   }
 }
@@ -362,7 +391,10 @@ export function throwGameError(
     | 'GAME_FINISHED'
     | 'ALREADY_IN_GAME'
     | 'REMATCH_NOT_ALLOWED'
-    | 'REMATCH_ALREADY_EXISTS',
+    | 'REMATCH_ALREADY_EXISTS'
+    | 'DRAW_NOT_ALLOWED'
+    | 'DRAW_ALREADY_PENDING'
+    | 'DRAW_NOT_PENDING',
   message: string,
 ): never {
   throw new ConvexError({ code, message })

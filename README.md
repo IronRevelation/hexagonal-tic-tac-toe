@@ -1,63 +1,67 @@
 # Hexagonal Tic-Tac-Toe Online
 
-Online multiplayer hexagonal tic-tac-toe built with TanStack Start, React 19, Tailwind CSS v4, and Convex.
+Real-time multiplayer hexagonal tic-tac-toe built with TanStack Start, React 19, Tailwind CSS v4, and Convex.
 
-## Overview
+The app supports anonymous guest play, public matchmaking, private rooms, spectators, rematches, draw offers, and disconnect-aware presence.
 
-This project is a real-time web implementation of an infinite-board hexagonal tic-tac-toe variant:
+## Game Rules
 
+- The board is infinite.
 - Player 1 opens with exactly one move.
-- Player 2 answers with two consecutive moves.
+- Player 2 responds with two consecutive moves.
 - Every turn after that also contains two moves.
-- The first player to connect 6 hexagons on one axis wins.
+- The first player to connect 6 hexagons on a single axis wins.
 
-The app supports public matchmaking, private rooms, spectators, rematches, draw offers, and disconnect-aware presence.
+## Features
 
-## Current Features
+- No account required. Guests are created automatically and persisted in `localStorage`.
+- Public matchmaking with queue status and cancellation.
+- Private rooms with shareable 6-character room codes.
+- Direct join links at `/join/<ROOM_CODE>`.
+- Spectator support for full private rooms.
+- Resume flow for the latest active game tied to the current guest.
+- Real-time board state, move history, turn state, and participant presence through Convex.
+- Pannable, zoomable infinite hex board.
+- Draw offers with cooldown enforcement.
+- Manual forfeits and automatic disconnect forfeits.
+- Rematches that create a linked follow-up game and swap the opener.
+- Private-room rematches that carry spectators forward.
 
-- Auto-created guest identities stored in `localStorage`
-- Resume flow for the latest active game tied to the current guest
-- Public matchmaking with queue status and cancellation
-- Private rooms with deterministic 6-character share codes
-- Direct join links at `/join/<ROOM_CODE>`
-- Spectator support for private rooms once both player slots are filled
-- Real-time board state, turn state, and player presence via Convex
-- Pannable and zoomable infinite hex board
-- Draw offers with per-player cooldowns
-- Manual forfeits
-- Automatic disconnect forfeits for active players
-- Rematches that create a linked follow-up game and swap the opener
-- Private-room rematches that carry spectators forward into the next game
-
-## Important Game And App Rules
+## Important App Rules
 
 - A guest can only be an active player in one game at a time.
 - Private rooms start in `waiting` and become `active` when the second player joins.
-- In both matchmaking and private games, the opening assignment is chosen when the match is created, so the room creator is not guaranteed to stay Player 1.
+- The room creator is not guaranteed to open as Player 1.
 - Joining a full private room makes the guest a spectator.
 - Finished private rooms do not accept new spectators.
 - Games can end by line completion, forfeit, or draw agreement.
-- Draw offers are limited by a cooldown of 8 total moves per player between offers.
-- The client sends a presence heartbeat every 10 seconds while the page is visible.
-- A player who stays disconnected for 90 seconds during an active game loses by forfeit.
-- Presence is shown as online/offline from recent heartbeats.
+- The client sends a presence heartbeat every 10 seconds while the tab is visible.
+- A disconnected active player forfeits after 90 seconds away.
 
 ## Tech Stack
 
-- TanStack Start + TanStack Router
+- TanStack Start and TanStack Router
 - React 19
-- Convex for database, sync, mutations, and scheduled disconnect handling
+- Convex
 - Tailwind CSS v4
-- Vitest + Testing Library
+- Vitest and Testing Library
 
-## Project Structure
+## Project Layout
 
 ```text
-src/                 Frontend routes, UI, guest session, presence hooks
-convex/              Backend schema, queries, mutations, matchmaking, rooms
+src/                 App routes, UI, guest session, and client-side hooks
+src/components/      Shared interface components, including the hex board
+convex/              Backend schema, queries, mutations, and matchmaking logic
 shared/              Shared game rules and contract types
 public/              Static assets
 ```
+
+## Routes
+
+- `/` lobby for matchmaking, room creation, resume, and join-by-code
+- `/about` game rules
+- `/join/:roomCode` room join handoff
+- `/games/:gameId` live game view
 
 ## Local Development
 
@@ -67,7 +71,7 @@ public/              Static assets
 - `pnpm`
 - A Convex project
 
-### Install
+### Install dependencies
 
 ```bash
 pnpm install
@@ -79,13 +83,9 @@ pnpm install
 npx convex dev
 ```
 
-This does three important things:
+This uploads backend functions, regenerates `convex/_generated/*`, and writes `.env.local` with the Convex variables used by the app.
 
-- uploads the Convex functions
-- regenerates `convex/_generated/*`
-- writes `.env.local` with the required Convex variables
-
-Current local env shape:
+Expected local environment variables:
 
 ```bash
 CONVEX_DEPLOYMENT=...
@@ -99,49 +99,33 @@ VITE_CONVEX_SITE_URL=...
 pnpm dev
 ```
 
-The Vite dev server runs on `http://localhost:3000`.
+The dev server runs on `http://localhost:3000`.
 
-## Testing
+## Scripts
 
 ```bash
+pnpm dev
+pnpm build
+pnpm preview
 pnpm test
 ```
 
-Current test coverage includes:
+## Testing
+
+Current tests cover:
 
 - shared hex game rules
-- draw/forfeit helper behavior
+- backend helper behavior
 - visible-tab heartbeat behavior
-
-## Production Build
-
-```bash
-pnpm build
-pnpm preview
-```
 
 ## Backend Notes
 
-- `convex/schema.ts` defines guests, games, moves, participants, and matchmaking queue tables.
-- `convex/matchmaking.ts` handles public queueing and match creation.
-- `convex/privateGames.ts` handles room creation, room joins, player assignment, and spectators.
-- `convex/games.ts` handles moves, draw offers, forfeits, and rematches.
-- `convex/guests.ts` handles guest creation, sessions, heartbeats, and leaving finished games.
+- [`convex/schema.ts`](./convex/schema.ts) defines guests, games, moves, participants, and the matchmaking queue.
+- [`convex/matchmaking.ts`](./convex/matchmaking.ts) handles public queueing and match creation.
+- [`convex/privateGames.ts`](./convex/privateGames.ts) handles private room creation, joining, spectators, and room deletion.
+- [`convex/games.ts`](./convex/games.ts) handles moves, draws, forfeits, resume logic, and rematches.
+- [`convex/guests.ts`](./convex/guests.ts) manages guest identities, sessions, heartbeats, and cleanup for finished games.
 
-## User Flows
+## Notes
 
-### Lobby
-
-- Resume an active game
-- Enter public matchmaking
-- Create a private room
-- Join a room with a code
-
-### In Game
-
-- Place moves when it is your turn
-- Pan and zoom the board
-- See the latest move and winning line highlights
-- Offer or respond to draws
-- Forfeit
-- Request or cancel a rematch after the game ends
+- [`convex/README.md`](./convex/README.md) is still the default Convex template and is not project-specific documentation.

@@ -547,7 +547,7 @@ function GamePage() {
                 Cancel
               </button>
               <button
-                className={cn(primaryButton, dangerButton)}
+                className={dangerButton}
                 disabled={isForfeitingGame}
                 onClick={() => void handleConfirmForfeit()}
                 type="button"

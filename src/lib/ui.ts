@@ -33,8 +33,7 @@ export const primaryButton = `${buttonBase} border-transparent bg-[linear-gradie
 
 export const secondaryButton = `${buttonBase} border-[var(--chip-line)] bg-[color-mix(in_oklab,var(--chip-bg)_88%,white_12%)] text-[var(--sea-ink)]`
 
-export const dangerButton =
-  'border-[rgba(214,118,95,0.28)] bg-[rgba(104,35,24,0.42)] text-[#ffd7cf]'
+export const dangerButton = `${buttonBase} border-transparent bg-[linear-gradient(135deg,#e57c61,#f0a37d)] text-[#24120d] shadow-[0_14px_28px_rgba(170,79,45,0.24)]`
 
 export const fieldLabel =
   'text-[0.82rem] font-bold uppercase tracking-[0.08em] text-[var(--sea-ink-soft)]'

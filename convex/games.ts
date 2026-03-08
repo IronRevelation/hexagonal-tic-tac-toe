@@ -22,6 +22,7 @@ import {
   listParticipants,
   loadGameState,
   normalizeGameTimeControl,
+  normalizeTurnCommitMode,
   now,
   refreshClockTimeout,
   refreshDisconnectForfeit,
@@ -31,7 +32,12 @@ import {
   throwGameError,
   toStoredState,
 } from './lib'
-import { applyMove, coordKey, serializeGameState } from '../shared/hexGame'
+import {
+  applyConfirmedTurn,
+  applyMove,
+  coordKey,
+  serializeGameState,
+} from '../shared/hexGame'
 import { getInitialClockMs } from '../shared/timeControl'
 
 export const resumeForGuest = query({
@@ -169,6 +175,12 @@ export const placeMove = mutation({
     }
 
     const playerSlot = requirePlayerRole(participant.role)
+    if (normalizeTurnCommitMode(game) !== 'instant') {
+      throwGameError(
+        'TURN_CONFIRM_REQUIRED',
+        'This game requires confirming the full turn before submitting moves.',
+      )
+    }
     const state = loadGameState(game)
     const timestamp = now()
     const resolvedClock = await ensureGameHasTimeRemaining(
@@ -206,6 +218,130 @@ export const placeMove = mutation({
       r: args.coord.r,
       createdAt: timestamp,
     })
+
+    await ctx.db.patch(game._id, {
+      serializedState: toStoredState(nextSerializedState),
+      winnerSlot: nextState.winner ?? undefined,
+      finishReason: nextState.winner ? 'line' : undefined,
+      status: nextState.winner ? 'finished' : 'active',
+      finishedAt: nextState.winner ? timestamp : undefined,
+      updatedAt: timestamp,
+      ...buildResolvedClockPatch(resolvedClock, nextActivePlayer, timestamp),
+      ...pendingDrawPatch,
+      ...(nextState.winner ? clearDrawOfferFields() : {}),
+    })
+
+    if (normalizeGameTimeControl(game) !== 'unlimited') {
+      await refreshClockTimeout(
+        ctx,
+        game,
+        resolvedClock
+          ? {
+              ...resolvedClock,
+              activePlayer: nextActivePlayer,
+              serverNow: timestamp,
+            }
+          : null,
+      )
+    }
+
+    return {
+      ok: true,
+      winner: nextState.winner,
+    }
+  },
+})
+
+export const confirmTurn = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+    coords: v.array(
+      v.object({
+        q: v.number(),
+        r: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const guest = await requireGuest(ctx.db, args.guestToken)
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      throwGameError('GAME_NOT_FOUND', 'Game not found.')
+    }
+    if (game.status !== 'active') {
+      throwGameError('GAME_FINISHED', 'This game is no longer active.')
+    }
+
+    if (normalizeTurnCommitMode(game) !== 'confirmTurn') {
+      throwGameError(
+        'INSTANT_MOVE_GAME',
+        'This game submits moves immediately and does not support turn confirmation.',
+      )
+    }
+
+    const participant = await getParticipant(ctx.db, game._id, guest._id)
+    if (!participant) {
+      throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
+    }
+
+    const playerSlot = requirePlayerRole(participant.role)
+    const state = loadGameState(game)
+    const timestamp = now()
+    const resolvedClock = await ensureGameHasTimeRemaining(
+      ctx,
+      game,
+      state.currentPlayer,
+      timestamp,
+    )
+    if (state.currentPlayer !== playerSlot) {
+      throwGameError('NOT_YOUR_TURN', 'It is not your turn.')
+    }
+    if (args.coords.length !== state.movesRemaining) {
+      throwGameError(
+        'INVALID_TURN_SIZE',
+        `This turn requires exactly ${state.movesRemaining} move${state.movesRemaining === 1 ? '' : 's'}.`,
+      )
+    }
+
+    const occupiedKeys = new Set(state.board.keys())
+    const seenKeys = new Set<string>()
+    for (const coord of args.coords) {
+      assertValidMoveCoord(coord)
+      const key = coordKey(coord)
+      if (seenKeys.has(key)) {
+        throwGameError('DUPLICATE_MOVE', 'A turn cannot contain the same hexagon twice.')
+      }
+      if (occupiedKeys.has(key)) {
+        throwGameError('CELL_OCCUPIED', 'That hexagon is already occupied.')
+      }
+      seenKeys.add(key)
+      occupiedKeys.add(key)
+    }
+
+    const pendingDrawOfferedBy = game.drawOfferedBy ?? null
+    const pendingDrawPatch =
+      pendingDrawOfferedBy === null
+        ? {}
+        : {
+            ...clearDrawOfferFields(),
+            ...drawOfferCooldownPatch(pendingDrawOfferedBy, state.totalMoves),
+          }
+    const nextState = applyConfirmedTurn(state, args.coords)
+    const nextSerializedState = serializeGameState(nextState)
+    const nextActivePlayer = nextState.winner ? null : nextState.currentPlayer
+
+    for (const [index, coord] of args.coords.entries()) {
+      await ctx.db.insert('gameMoves', {
+        gameId: game._id,
+        moveIndex: state.totalMoves + index,
+        turnNumber: state.turnNumber,
+        slot: playerSlot,
+        q: coord.q,
+        r: coord.r,
+        createdAt: timestamp,
+      })
+    }
 
     await ctx.db.patch(game._id, {
       serializedState: toStoredState(nextSerializedState),
@@ -566,6 +702,7 @@ export const requestRematch = mutation({
       mode: game.mode,
       status: 'active',
       timeControl: normalizeGameTimeControl(game),
+      turnCommitMode: normalizeTurnCommitMode(game),
       roomCode: game.mode === 'private' ? game.roomCode : undefined,
       createdByGuestId: game.createdByGuestId,
       playerOneGuestId: game.playerTwoGuestId,

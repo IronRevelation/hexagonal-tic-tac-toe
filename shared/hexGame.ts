@@ -1,6 +1,7 @@
 import type { GameReplayMove } from './contracts'
 
 export type PlayerSlot = 'one' | 'two'
+export type TurnCommitMode = 'instant' | 'confirmTurn'
 
 export type HexCoord = {
   q: number
@@ -14,6 +15,7 @@ export type GameState = {
   turnNumber: number
   totalMoves: number
   lastMove: HexCoord | null
+  lastTurnMoves: HexCoord[]
   winner: PlayerSlot | null
   winningLine: HexCoord[]
 }
@@ -25,6 +27,7 @@ export type SerializedGameState = {
   turnNumber: number
   totalMoves: number
   lastMove: HexCoord | null
+  lastTurnMoves: HexCoord[]
   winner: PlayerSlot | null
   winningLine: HexCoord[]
 }
@@ -69,6 +72,7 @@ export function createInitialGameState(): GameState {
     turnNumber: 1,
     totalMoves: 0,
     lastMove: null,
+    lastTurnMoves: [],
     winner: null,
     winningLine: [],
   }
@@ -82,6 +86,7 @@ export function serializeGameState(state: GameState): SerializedGameState {
     turnNumber: state.turnNumber,
     totalMoves: state.totalMoves,
     lastMove: state.lastMove,
+    lastTurnMoves: state.lastTurnMoves,
     winner: state.winner,
     winningLine: state.winningLine,
   }
@@ -95,6 +100,7 @@ export function deserializeGameState(state: SerializedGameState): GameState {
     turnNumber: state.turnNumber,
     totalMoves: state.totalMoves,
     lastMove: state.lastMove,
+    lastTurnMoves: state.lastTurnMoves,
     winner: state.winner,
     winningLine: state.winningLine,
   }
@@ -137,6 +143,8 @@ export function applyMove(state: GameState, coord: HexCoord): GameState {
 
   const winningLine = checkWinner(nextBoard, coord, state.currentPlayer)
   const nextTotalMoves = state.totalMoves + 1
+  const nextLastTurnMoves =
+    state.movesRemaining === 1 ? [...state.lastTurnMoves, coord] : [coord]
 
   if (winningLine) {
     return {
@@ -144,6 +152,7 @@ export function applyMove(state: GameState, coord: HexCoord): GameState {
       board: nextBoard,
       totalMoves: nextTotalMoves,
       lastMove: coord,
+      lastTurnMoves: nextLastTurnMoves,
       winner: state.currentPlayer,
       winningLine,
       movesRemaining: 0,
@@ -156,6 +165,7 @@ export function applyMove(state: GameState, coord: HexCoord): GameState {
       board: nextBoard,
       totalMoves: nextTotalMoves,
       lastMove: coord,
+      lastTurnMoves: nextLastTurnMoves,
       movesRemaining: state.movesRemaining - 1,
       winningLine: [],
     }
@@ -169,6 +179,81 @@ export function applyMove(state: GameState, coord: HexCoord): GameState {
     turnNumber: state.turnNumber + 1,
     totalMoves: nextTotalMoves,
     lastMove: coord,
+    lastTurnMoves: nextLastTurnMoves,
+    winningLine: [],
+  }
+}
+
+export function applyPendingPlacement(state: GameState, coord: HexCoord): GameState {
+  if (state.winner || state.movesRemaining <= 0 || state.board.has(coordKey(coord))) {
+    return state
+  }
+
+  const nextBoard = new Map(state.board)
+  nextBoard.set(coordKey(coord), state.currentPlayer)
+
+  return {
+    ...state,
+    board: nextBoard,
+    totalMoves: state.totalMoves + 1,
+    lastMove: coord,
+    movesRemaining: state.movesRemaining - 1,
+    winningLine: [],
+  }
+}
+
+export function applyConfirmedTurn(
+  state: GameState,
+  coords: ReadonlyArray<HexCoord>,
+): GameState {
+  if (state.winner || coords.length === 0 || coords.length !== state.movesRemaining) {
+    return state
+  }
+
+  const nextBoard = new Map(state.board)
+
+  for (const coord of coords) {
+    const key = coordKey(coord)
+    if (nextBoard.has(key)) {
+      return state
+    }
+    nextBoard.set(key, state.currentPlayer)
+  }
+
+  let winningLine: HexCoord[] | null = null
+  for (const coord of coords) {
+    winningLine = checkWinner(nextBoard, coord, state.currentPlayer)
+    if (winningLine) {
+      break
+    }
+  }
+
+  const lastMove = coords[coords.length - 1] ?? null
+  const nextTotalMoves = state.totalMoves + coords.length
+  const lastTurnMoves = [...coords]
+
+  if (winningLine) {
+    return {
+      ...state,
+      board: nextBoard,
+      totalMoves: nextTotalMoves,
+      lastMove,
+      lastTurnMoves,
+      winner: state.currentPlayer,
+      winningLine,
+      movesRemaining: 0,
+    }
+  }
+
+  return {
+    ...state,
+    board: nextBoard,
+    currentPlayer: opponentOf(state.currentPlayer),
+    movesRemaining: 2,
+    turnNumber: state.turnNumber + 1,
+    totalMoves: nextTotalMoves,
+    lastMove,
+    lastTurnMoves,
     winningLine: [],
   }
 }
@@ -176,12 +261,51 @@ export function applyMove(state: GameState, coord: HexCoord): GameState {
 export function buildReplayState(
   moves: ReadonlyArray<GameReplayMove>,
   appliedMoveCount: number,
+  turnCommitMode: TurnCommitMode = 'instant',
 ): GameState {
   const clampedMoveCount = Math.max(
     0,
     Math.min(Math.floor(appliedMoveCount), moves.length),
   )
   let state = createInitialGameState()
+
+  if (turnCommitMode === 'confirmTurn') {
+    let index = 0
+
+    while (index < clampedMoveCount) {
+      const move = moves[index]
+      if (!move) {
+        break
+      }
+
+      const turnMoves: GameReplayMove[] = [move]
+      index += 1
+
+      while (index < moves.length && moves[index]?.turnNumber === move.turnNumber) {
+        turnMoves.push(moves[index]!)
+        index += 1
+      }
+
+      const appliedTurnMoves = turnMoves.slice(
+        0,
+        Math.max(0, clampedMoveCount - (index - turnMoves.length)),
+      )
+
+      if (appliedTurnMoves.length === turnMoves.length) {
+        state = applyConfirmedTurn(
+          state,
+          appliedTurnMoves.map((entry) => entry.coord),
+        )
+        continue
+      }
+
+      for (const partialMove of appliedTurnMoves) {
+        state = applyPendingPlacement(state, partialMove.coord)
+      }
+    }
+
+    return state
+  }
 
   for (let index = 0; index < clampedMoveCount; index += 1) {
     const move = moves[index]

@@ -4,7 +4,14 @@ import {
   useState,
   type PointerEvent,
 } from 'react'
-import { PLAYER_MARKS, coordKey, type HexCoord, type SerializedGameState } from '../../shared/hexGame'
+import {
+  PLAYER_MARKS,
+  coordKey,
+  type HexCoord,
+  type PlayerSlot,
+  type SerializedGameState,
+  type TurnCommitMode,
+} from '../../shared/hexGame'
 import { primaryButton, surfacePanel } from '../lib/ui'
 
 type Camera = {
@@ -38,14 +45,22 @@ export default function HexBoard({
   state,
   canPlay,
   disabled,
+  highlightedMoves,
   onSelect,
   overlay,
+  pendingMoves = [],
+  pendingOwner = null,
+  turnCommitMode = 'instant',
 }: {
   state: SerializedGameState
   canPlay: boolean
   disabled: boolean
+  highlightedMoves?: HexCoord[]
   onSelect: (coord: HexCoord) => void
   overlay?: React.ReactNode
+  pendingMoves?: HexCoord[]
+  pendingOwner?: PlayerSlot | null
+  turnCommitMode?: TurnCommitMode
 }) {
   const [camera, setCamera] = useState(INITIAL_CAMERA)
   const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: 0 })
@@ -56,8 +71,14 @@ export default function HexBoard({
   const dragStateRef = useRef<DragState | null>(null)
   const hasAppliedInitialViewportZoomRef = useRef(false)
   const board = new Map(state.board)
+  const pendingKeys = new Set(pendingMoves.map(coordKey))
   const winningKeys = new Set(state.winningLine.map(coordKey))
-  const lastMoveKey = state.lastMove ? coordKey(state.lastMove) : null
+  const recentTurnKeys = new Set(
+    (
+      highlightedMoves ??
+      state.lastTurnMoves
+    ).map(coordKey),
+  )
 
   useEffect(() => {
     const boardElement = boardRef.current
@@ -320,11 +341,17 @@ export default function HexBoard({
           {visibleCoords.map((coord) => {
             const key = coordKey(coord)
             const owner = board.get(key)
+            const pendingStoneOwner =
+              owner === undefined && pendingOwner !== null && pendingKeys.has(key)
+                ? pendingOwner
+                : null
+            const renderedOwner = owner ?? pendingStoneOwner
             const center = axialToPixel(coord)
             const className = [
               'hex-cell',
-              owner ? `player-${owner}` : 'is-empty',
-              key === lastMoveKey ? 'is-last-move' : '',
+              renderedOwner ? `player-${renderedOwner}` : 'is-empty',
+              recentTurnKeys.has(key) ? 'is-recent-turn' : '',
+              pendingStoneOwner ? 'is-pending' : '',
               winningKeys.has(key) ? 'is-winning-line' : '',
               key === '0,0' ? 'is-origin' : '',
             ]
@@ -334,16 +361,16 @@ export default function HexBoard({
             return (
               <g className={className} key={key}>
                 <polygon points={hexPolygonPoints(center, HEX_SIZE - 2.2)} />
-                {owner ? (
+                {renderedOwner ? (
                   <>
                     <circle
-                      className={`stone stone-${owner}`}
+                      className={`stone stone-${renderedOwner}`}
                       cx={center.x}
                       cy={center.y}
                       r={HEX_SIZE * 0.5}
                     />
                     <text className="stone-mark" x={center.x} y={center.y + 1}>
-                      {PLAYER_MARKS[owner]}
+                      {PLAYER_MARKS[renderedOwner]}
                     </text>
                   </>
                 ) : null}

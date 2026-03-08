@@ -1,4 +1,9 @@
-import type { HexCoord, PlayerSlot, SerializedGameState } from './hexGame'
+import type {
+  HexCoord,
+  PlayerSlot,
+  SerializedGameState,
+  TurnCommitMode,
+} from './hexGame'
 import type { TimeControlPreset, TimedTimeControlPreset } from './timeControl'
 
 export type GameMode = 'matchmaking' | 'private'
@@ -52,6 +57,7 @@ export type GameSnapshot = {
   nextGameId: string | null
   viewerRole: ParticipantRole | null
   viewerCanMove: boolean
+  turnCommitMode: TurnCommitMode
   state: SerializedGameState
   players: Record<PlayerSlot, PlayerPresence | null>
   spectatorCount: number
@@ -122,6 +128,7 @@ export type GameReplayData = {
   finishedAt: number
   updatedAt: number
   players: Record<PlayerSlot, { displayName: string }>
+  turnCommitMode: TurnCommitMode
   finalState: SerializedGameState
   moves: GameReplayMove[]
 }

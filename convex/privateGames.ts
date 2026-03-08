@@ -31,6 +31,7 @@ export const create = mutation({
       v.literal('5m'),
       v.literal('10m'),
     ),
+    turnCommitMode: v.union(v.literal('instant'), v.literal('confirmTurn')),
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
@@ -50,6 +51,7 @@ export const create = mutation({
       mode: 'private',
       status: 'waiting',
       timeControl: args.timeControl,
+      turnCommitMode: args.turnCommitMode,
       createdByGuestId: guest._id,
       playerOneGuestId: guest._id,
       playerOneTimeRemainingMs: initialClockMs ?? undefined,

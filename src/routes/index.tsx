@@ -23,6 +23,8 @@ import {
 } from '../lib/ui'
 import { useVisibleHeartbeat } from '../lib/useVisibleHeartbeat'
 import { TIME_CONTROL_PRESETS, type TimeControlPreset } from '../../shared/timeControl'
+import { type TurnCommitMode } from '../../shared/hexGame'
+import { DEFAULT_PRIVATE_TURN_COMMIT_MODE } from '../lib/turnSubmission'
 
 export const Route = createFileRoute('/')({
   component: LobbyPage,
@@ -38,6 +40,8 @@ function LobbyPage() {
   const [isTimeControlModalOpen, setIsTimeControlModalOpen] = useState(false)
   const [selectedTimeControl, setSelectedTimeControl] =
     useState<TimeControlPreset>('unlimited')
+  const [selectedTurnCommitMode, setSelectedTurnCommitMode] =
+    useState<TurnCommitMode>(DEFAULT_PRIVATE_TURN_COMMIT_MODE)
   const previousMatchState = useRef<'idle' | 'queued' | 'matched'>('idle')
   const joinMatchmaking = useMutation(api.matchmaking.join)
   const cancelMatchmaking = useMutation(api.matchmaking.cancel)
@@ -115,7 +119,10 @@ function LobbyPage() {
     }
   }
 
-  async function handleCreatePrivateGame(timeControl: TimeControlPreset) {
+  async function handleCreatePrivateGame(
+    timeControl: TimeControlPreset,
+    turnCommitMode: TurnCommitMode,
+  ) {
     setPendingAction('private')
     setActionError(null)
 
@@ -124,6 +131,7 @@ function LobbyPage() {
       const result = await createPrivateGame({
         guestToken: activeGuestToken,
         timeControl,
+        turnCommitMode,
       })
       setIsTimeControlModalOpen(false)
       await navigate({
@@ -153,6 +161,7 @@ function LobbyPage() {
 
   function openTimeControlModal() {
     setSelectedTimeControl('unlimited')
+    setSelectedTurnCommitMode(DEFAULT_PRIVATE_TURN_COMMIT_MODE)
     setIsTimeControlModalOpen(true)
   }
 
@@ -308,8 +317,8 @@ function LobbyPage() {
                 Choose a time control
               </h2>
               <p className="m-0 text-[0.96rem] leading-[1.55] text-[var(--sea-ink-soft)]">
-                Matchmaking stays unlimited. Room clocks start when the second
-                player joins.
+                Matchmaking stays unlimited and uses confirmed turns. Room clocks
+                start when the second player joins.
               </p>
             </div>
             <div className="rounded-[1.15rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_88%,white_12%)] px-4 py-3 text-[0.82rem] leading-[1.5] text-[var(--sea-ink-soft)]">
@@ -358,6 +367,60 @@ function LobbyPage() {
                 )
               })}
             </div>
+            <div className="grid gap-3">
+              <span className={fieldLabel}>Move submission</span>
+              <div className="grid grid-cols-2 gap-2 text-left">
+                {[
+                  {
+                    value: 'confirmTurn',
+                    label: 'Confirmed turns',
+                    description: 'Place all required hexes, then press Confirm move.',
+                  },
+                  {
+                    value: 'instant',
+                    label: 'Instant',
+                    description: 'Each click is submitted immediately.',
+                  },
+                ].map((option) => {
+                  const isSelected = selectedTurnCommitMode === option.value
+
+                  return (
+                    <button
+                      key={option.value}
+                      className={cn(
+                        'relative grid min-h-[5.2rem] content-between rounded-[1.15rem] border px-4 py-3 text-left transition-[background-color,color,border-color,transform,box-shadow] duration-[180ms]',
+                        isSelected
+                          ? 'border-[color-mix(in_oklab,var(--amber)_40%,var(--lagoon))] bg-[linear-gradient(155deg,color-mix(in_oklab,var(--surface-strong)_78%,white_22%),color-mix(in_oklab,var(--surface)_88%,var(--amber)_12%))] text-[var(--sea-ink)] shadow-[0_14px_30px_rgba(15,24,32,0.14)]'
+                          : 'border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_90%,white_10%)] text-[var(--sea-ink-soft)] hover:border-[color-mix(in_oklab,var(--lagoon)_26%,var(--line))] hover:bg-[color-mix(in_oklab,var(--surface-strong)_88%,white_12%)]',
+                      )}
+                      onClick={() =>
+                        setSelectedTurnCommitMode(option.value as TurnCommitMode)
+                      }
+                      type="button"
+                    >
+                      <span
+                        className={cn(
+                          'absolute right-3 top-3 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1 text-[0.66rem] font-bold uppercase tracking-[0.08em]',
+                          isSelected
+                            ? 'border-transparent bg-[linear-gradient(135deg,var(--amber),color-mix(in_oklab,var(--amber)_70%,white))] text-[#0f1820]'
+                            : 'border-[var(--line)] text-[var(--sea-ink-soft)]',
+                        )}
+                      >
+                        {isSelected ? 'On' : 'Off'}
+                      </span>
+                      <div className="grid gap-[0.18rem] pr-9">
+                        <strong className="text-[1rem] text-[var(--sea-ink)]">
+                          {option.label}
+                        </strong>
+                        <span className="text-[0.8rem] leading-[1.35]">
+                          {option.description}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             <div className="flex items-center justify-end gap-3 pt-1 max-[720px]:grid max-[720px]:grid-cols-2">
               <button
                 className={secondaryButton}
@@ -370,7 +433,12 @@ function LobbyPage() {
               <button
                 className={primaryButton}
                 disabled={pendingAction === 'private'}
-                onClick={() => void handleCreatePrivateGame(selectedTimeControl)}
+                onClick={() =>
+                  void handleCreatePrivateGame(
+                    selectedTimeControl,
+                    selectedTurnCommitMode,
+                  )
+                }
                 type="button"
               >
                 {pendingAction === 'private' ? 'Creating…' : 'Create room'}

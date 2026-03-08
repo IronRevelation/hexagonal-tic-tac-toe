@@ -80,6 +80,7 @@ export const join = mutation({
       mode: 'matchmaking',
       status: 'active',
       timeControl: 'unlimited',
+      turnCommitMode: 'confirmTurn',
       createdByGuestId: availableOpponent.guestId,
       playerOneGuestId: openingOrder.playerOneGuestId,
       playerTwoGuestId: openingOrder.playerTwoGuestId,

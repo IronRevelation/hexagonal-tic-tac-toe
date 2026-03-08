@@ -26,6 +26,7 @@ const participantRole = v.union(
   v.literal('playerTwo'),
   v.literal('spectator'),
 )
+const turnCommitMode = v.union(v.literal('instant'), v.literal('confirmTurn'))
 const guestState = v.union(v.literal('active'), v.literal('erased'))
 
 const hexCoord = v.object({
@@ -45,6 +46,7 @@ const storedGameState = v.object({
   turnNumber: v.number(),
   totalMoves: v.number(),
   lastMove: v.union(hexCoord, v.null()),
+  lastTurnMoves: v.optional(v.array(hexCoord)),
   winner: v.union(playerSlot, v.null()),
   winningLine: v.array(hexCoord),
 })
@@ -73,6 +75,7 @@ export default defineSchema({
     turnStartedAt: v.optional(v.number()),
     clockTimeoutGeneration: v.optional(v.number()),
     clockTimeoutJobId: v.optional(v.id('_scheduled_functions')),
+    turnCommitMode: v.optional(turnCommitMode),
     serializedState: storedGameState,
     winnerSlot: v.optional(playerSlot),
     finishReason: v.optional(gameFinishReason),

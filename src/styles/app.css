@@ -230,6 +230,12 @@ a:hover {
   stroke-width: 3.2;
 }
 
+.hex-cell.is-recent-turn polygon {
+  stroke: rgba(255, 244, 219, 0.82);
+  stroke-width: 3.1;
+  filter: drop-shadow(0 0 12px rgba(255, 244, 219, 0.18));
+}
+
 .hex-cell.is-winning-line polygon {
   filter: drop-shadow(0 0 16px rgba(255, 244, 219, 0.28));
   stroke: rgba(255, 244, 219, 0.9);
@@ -237,6 +243,11 @@ a:hover {
 
 .stone {
   stroke-width: 2.5;
+}
+
+.hex-cell.is-pending .stone {
+  opacity: 0.74;
+  stroke-dasharray: 4 3;
 }
 
 .stone-one {

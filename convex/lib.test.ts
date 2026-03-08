@@ -15,6 +15,7 @@ import {
   findAvailableMatchmakingOpponent,
   isValidGuestToken,
   normalizeGameTimeControl,
+  normalizeTurnCommitMode,
   resolveHistoryResult,
   resolveTimedGameClock,
 } from './lib'
@@ -163,6 +164,7 @@ describe('draw offer helpers', () => {
 
   it('treats legacy games without a time control as unlimited', () => {
     expect(normalizeGameTimeControl({} as never)).toBe('unlimited')
+    expect(normalizeTurnCommitMode({} as never)).toBe('instant')
     expect(
       resolveTimedGameClock(
         {
@@ -175,6 +177,12 @@ describe('draw offer helpers', () => {
         1_000,
       ),
     ).toBeNull()
+  })
+
+  it('reads turn commit mode from newer games', () => {
+    expect(normalizeTurnCommitMode({ turnCommitMode: 'confirmTurn' } as never)).toBe(
+      'confirmTurn',
+    )
   })
 
   it('accepts UUID guest tokens and rejects arbitrary strings', () => {
@@ -306,6 +314,122 @@ describe('draw offer helpers', () => {
       finishedAt: 18,
       updatedAt: 20,
       totalMoves: 9,
+    })
+  })
+
+  it('builds replay data with turn commit mode and hydrated last-turn state', async () => {
+    const game = {
+      _id: 'game_1',
+      status: 'finished',
+      finishReason: 'line',
+      updatedAt: 20,
+      finishedAt: 18,
+      mode: 'private',
+      timeControl: 'unlimited',
+      turnCommitMode: 'confirmTurn',
+      winnerSlot: 'one',
+      playerOneGuestId: 'guest_1',
+      playerTwoGuestId: 'guest_2',
+      seriesId: 'series_1',
+      serializedState: {
+        board: [{ key: '0,0', player: 'one' }],
+        currentPlayer: 'two',
+        movesRemaining: 2,
+        turnNumber: 2,
+        totalMoves: 1,
+        lastMove: { q: 0, r: 0 },
+        winner: null,
+        winningLine: [],
+      },
+    } as never
+    const participant = {
+      guestId: 'guest_1',
+      role: 'playerOne',
+    } as never
+    const moves = [
+      {
+        moveIndex: 0,
+        turnNumber: 1,
+        slot: 'one',
+        q: 0,
+        r: 0,
+        createdAt: 11,
+      },
+    ]
+    const db = {
+      async get(id: string) {
+        if (id === 'guest_1') {
+          return { displayName: 'Amber Crane 10' }
+        }
+        if (id === 'guest_2') {
+          return { displayName: 'River Otter 01' }
+        }
+        return null
+      },
+      query(table: string) {
+        expect(table).toBe('gameMoves')
+        return {
+          withIndex(index: string, builder: (query: { eq: (field: string, value: string) => unknown }) => unknown) {
+            expect(index).toBe('by_gameId_moveIndex')
+            let gameId = ''
+            const query = {
+              eq(field: string, value: string) {
+                expect(field).toBe('gameId')
+                gameId = value
+                return query
+              },
+            }
+            builder(query)
+            expect(gameId).toBe('game_1')
+            return {
+              collect: async () => moves,
+            }
+          },
+        }
+      },
+    }
+
+    await expect(
+      buildReplayData(db as never, 'guest_1' as never, game, participant),
+    ).resolves.toEqual({
+      gameId: 'game_1',
+      seriesId: 'series_1',
+      mode: 'private',
+      timeControl: 'unlimited',
+      finishReason: 'line',
+      winnerSlot: 'one',
+      viewerSlot: 'one',
+      finishedAt: 18,
+      updatedAt: 20,
+      turnCommitMode: 'confirmTurn',
+      players: {
+        one: {
+          displayName: 'Amber Crane 10',
+        },
+        two: {
+          displayName: 'River Otter 01',
+        },
+      },
+      finalState: {
+        board: [['0,0', 'one']],
+        currentPlayer: 'two',
+        movesRemaining: 2,
+        turnNumber: 2,
+        totalMoves: 1,
+        lastMove: { q: 0, r: 0 },
+        lastTurnMoves: [{ q: 0, r: 0 }],
+        winner: null,
+        winningLine: [],
+      },
+      moves: [
+        {
+          moveIndex: 0,
+          turnNumber: 1,
+          slot: 'one',
+          coord: { q: 0, r: 0 },
+          createdAt: 11,
+        },
+      ],
     })
   })
 

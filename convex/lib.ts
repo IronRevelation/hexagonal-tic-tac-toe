@@ -13,6 +13,7 @@ import {
   type HexCoord,
   type PlayerSlot,
   type SerializedGameState,
+  type TurnCommitMode,
 } from '../shared/hexGame'
 import type {
   DrawOfferState,
@@ -110,6 +111,7 @@ export function fromStoredState(
   return {
     ...state,
     board: state.board.map(({ key, player }) => [key, player] as const),
+    lastTurnMoves: state.lastTurnMoves ?? (state.lastMove ? [state.lastMove] : []),
   }
 }
 
@@ -367,6 +369,12 @@ export function isOnline(lastSeenAt: number) {
 
 export function normalizeGameTimeControl(game: Pick<GameDoc, 'timeControl'>): TimeControlPreset {
   return game.timeControl ?? 'unlimited'
+}
+
+export function normalizeTurnCommitMode(
+  game: Pick<GameDoc, 'turnCommitMode'>,
+): TurnCommitMode {
+  return game.turnCommitMode ?? 'instant'
 }
 
 export function resolveTimedGameClock(
@@ -634,6 +642,7 @@ export async function buildGameSnapshot(
     nextGameId: game.nextGameId ?? null,
     viewerRole: viewer.role as ParticipantRole,
     viewerCanMove,
+    turnCommitMode: normalizeTurnCommitMode(game),
     state,
     players: {
       one: playerOne,
@@ -730,6 +739,7 @@ export async function buildReplayData(
     viewerSlot,
     finishedAt: game.finishedAt ?? game.updatedAt,
     updatedAt: game.updatedAt,
+    turnCommitMode: normalizeTurnCommitMode(game),
     players: {
       one: {
         displayName: playerOneGuest?.displayName ?? PLAYER_LABELS.one,
@@ -820,7 +830,11 @@ export function throwGameError(
     | 'DRAW_ALREADY_PENDING'
     | 'DRAW_NOT_PENDING'
     | 'INVALID_COORD'
-    | 'MATCHMAKING_ACTIVE',
+    | 'MATCHMAKING_ACTIVE'
+    | 'TURN_CONFIRM_REQUIRED'
+    | 'INSTANT_MOVE_GAME'
+    | 'INVALID_TURN_SIZE'
+    | 'DUPLICATE_MOVE',
   message: string,
 ): never {
   throw new ConvexError({ code, message })

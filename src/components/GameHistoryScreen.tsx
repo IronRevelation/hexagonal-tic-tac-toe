@@ -80,7 +80,6 @@ export default function GameHistoryScreen({
         )}
         <ReplayPanelShell
           guestToken={guestToken}
-          hasGuestToken={guestToken !== null}
           selectedGameId={selectedGameId}
         />
       </section>
@@ -185,11 +184,9 @@ function HistoryListPanel({
 
 function ReplayPanelShell({
   guestToken,
-  hasGuestToken,
   selectedGameId,
 }: {
   guestToken: string | null
-  hasGuestToken: boolean
   selectedGameId: string | null
 }) {
   if (selectedGameId === null) {
@@ -247,20 +244,7 @@ function ReplayPanelLoader({
   const { data: replay } = useSuspenseQuery(
     replayQueryOptions(guestToken, selectedGameId),
   )
-  const { appliedMoveCount, goToEnd, goToNext, goToPrevious, goToStart, isPlaying, jumpTo, togglePlayback } =
-    useGameReplay({
-      moveCount: replay?.moves.length ?? 0,
-      resetKey: replay?.gameId ?? selectedGameId,
-    })
-  const replayState =
-    !replay
-      ? null
-      : appliedMoveCount === replay.moves.length
-        ? replay.finalState
-        : serializeGameState(buildReplayState(replay.moves, appliedMoveCount))
-  const moveGroups = groupMovesByTurn(replay?.moves ?? [])
-
-  if (!replay || !replayState) {
+  if (!replay) {
     return (
       <section className={`${surfacePanel} grid min-h-[38rem] place-items-center rounded-[1.7rem] p-5 max-[720px]:min-h-[20rem] max-[720px]:rounded-[1.35rem]`}>
         <EmptyPanel
@@ -276,6 +260,27 @@ function ReplayPanelLoader({
     )
   }
 
+  const {
+    appliedMoveCount,
+    goToEnd,
+    goToNext,
+    goToPrevious,
+    goToStart,
+    isPlaying,
+    jumpTo,
+    togglePlayback,
+  } = useGameReplay({
+    moveCount: replay.moves.length,
+    resetKey: replay.gameId,
+  })
+  const replayState =
+    appliedMoveCount === replay.moves.length
+      ? replay.finalState
+      : serializeGameState(
+          buildReplayState(replay.moves, appliedMoveCount, replay.turnCommitMode),
+        )
+  const moveGroups = groupMovesByTurn(replay.moves)
+
   return (
     <ReplayPanel
       appliedMoveCount={appliedMoveCount}
@@ -283,13 +288,11 @@ function ReplayPanelLoader({
       goToNext={goToNext}
       goToPrevious={goToPrevious}
       goToStart={goToStart}
-      hasGuestToken={true}
       isPlaying={isPlaying}
       jumpTo={jumpTo}
       moveGroups={moveGroups}
       replay={replay}
       replayState={replayState}
-      selectedGameId={selectedGameId}
       togglePlayback={togglePlayback}
     />
   )
@@ -301,13 +304,11 @@ function ReplayPanel({
   goToNext,
   goToPrevious,
   goToStart,
-  hasGuestToken,
   isPlaying,
   jumpTo,
   moveGroups,
   replay,
   replayState,
-  selectedGameId,
   togglePlayback,
 }: {
   appliedMoveCount: number
@@ -315,16 +316,13 @@ function ReplayPanel({
   goToNext: () => void
   goToPrevious: () => void
   goToStart: () => void
-  hasGuestToken: boolean
   isPlaying: boolean
   jumpTo: (moveCount: number) => void
   moveGroups: Array<{ turnNumber: number; moves: GameReplayMove[] }>
-  replay: GameReplayData | null
-  replayState: GameReplayData['finalState'] | null
-  selectedGameId: string | null
+  replay: GameReplayData
+  replayState: GameReplayData['finalState']
   togglePlayback: () => void
 }) {
-
   return (
     <section className={`${surfacePanel} grid content-start gap-3 rounded-[1.55rem] p-4 max-[720px]:rounded-[1.25rem] max-[720px]:p-3`}>
       <div className="grid gap-1">

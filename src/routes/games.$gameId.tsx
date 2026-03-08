@@ -9,6 +9,11 @@ import HexBoard from '../components/HexBoard'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
 import { asGameId } from '../lib/ids'
+import {
+  getCanonicalTurnKey,
+  getRequiredSelections,
+  togglePendingSelection,
+} from '../lib/turnSubmission'
 import { useGameClock } from '../lib/useGameClock'
 import {
   brandOrb,
@@ -38,6 +43,7 @@ function GamePage() {
   const { guestToken, isLoading: isGuestLoading } = useGuestSession()
   const [moveError, setMoveError] = useState<string | null>(null)
   const [isSubmittingMove, setIsSubmittingMove] = useState(false)
+  const [isConfirmingTurn, setIsConfirmingTurn] = useState(false)
   const [isUpdatingRematch, setIsUpdatingRematch] = useState(false)
   const [isOfferingDraw, setIsOfferingDraw] = useState(false)
   const [isRespondingToDraw, setIsRespondingToDraw] = useState(false)
@@ -47,11 +53,14 @@ function GamePage() {
   const [isConfirmingDeleteRoom, setIsConfirmingDeleteRoom] = useState(false)
   const [copiedShareLink, setCopiedShareLink] = useState(false)
   const [isLeavingGame, setIsLeavingGame] = useState(false)
+  const [pendingCoords, setPendingCoords] = useState<HexCoord[]>([])
+  const [pendingTurnKey, setPendingTurnKey] = useState<string | null>(null)
   const game = useQuery(
     api.games.byIdForGuest,
     guestToken ? { guestToken, gameId: asGameId(gameId) } : 'skip',
   )
   const placeMove = useMutation(api.games.placeMove)
+  const confirmTurn = useMutation(api.games.confirmTurn)
   const requestRematch = useMutation(api.games.requestRematch)
   const cancelRematch = useMutation(api.games.cancelRematch)
   const offerDraw = useMutation(api.games.offerDraw)
@@ -61,6 +70,7 @@ function GamePage() {
   const leaveFinishedGame = useMutation(api.guests.leaveFinishedGame)
   const deletePrivateRoom = useMutation(api.privateGames.remove)
   const liveClock = useGameClock(game?.clock ?? null)
+  const canonicalTurnKey = game ? getCanonicalTurnKey(game.gameId, game.state) : null
 
   useVisibleHeartbeat(guestToken, gameId)
 
@@ -87,8 +97,40 @@ function GamePage() {
     }
   }, [copiedShareLink])
 
+  useEffect(() => {
+    if (!game || game.turnCommitMode !== 'confirmTurn') {
+      if (pendingCoords.length > 0 || pendingTurnKey !== null) {
+        setPendingCoords([])
+        setPendingTurnKey(null)
+      }
+      return
+    }
+
+    if (pendingTurnKey !== null && pendingTurnKey !== canonicalTurnKey) {
+      setPendingCoords([])
+      setPendingTurnKey(null)
+    }
+  }, [canonicalTurnKey, game, pendingCoords.length, pendingTurnKey])
+
   async function handleSelect(coord: HexCoord) {
-    if (!guestToken) {
+    if (!guestToken || !game) {
+      return
+    }
+
+    if (game.turnCommitMode === 'confirmTurn') {
+      const requiredSelections = getRequiredSelections(game.state)
+      const committedKeys = new Set(game.state.board.map(([key]) => key))
+
+      setMoveError(null)
+      setPendingTurnKey((current) => current ?? canonicalTurnKey)
+      setPendingCoords((current) =>
+        togglePendingSelection({
+          committedKeys,
+          coord,
+          pendingCoords: current,
+          requiredSelections,
+        }),
+      )
       return
     }
 
@@ -105,6 +147,38 @@ function GamePage() {
       setMoveError(getConvexErrorMessage(cause, 'Unable to place that move.'))
     } finally {
       setIsSubmittingMove(false)
+    }
+  }
+
+  async function handleConfirmTurn() {
+    if (
+      !guestToken ||
+      !game ||
+      game.turnCommitMode !== 'confirmTurn'
+    ) {
+      return
+    }
+
+    const requiredSelections = getRequiredSelections(game.state)
+    if (pendingCoords.length !== requiredSelections) {
+      return
+    }
+
+    setIsConfirmingTurn(true)
+    setMoveError(null)
+
+    try {
+      await confirmTurn({
+        guestToken,
+        gameId: asGameId(gameId),
+        coords: pendingCoords,
+      })
+      setPendingCoords([])
+      setPendingTurnKey(null)
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to confirm that turn.'))
+    } finally {
+      setIsConfirmingTurn(false)
     }
   }
 
@@ -358,6 +432,22 @@ function GamePage() {
     !opponentPresence.isOnline &&
     !game.nextGameId
   const clockText = liveClock?.displayText ?? null
+  const isConfirmTurnGame = game.turnCommitMode === 'confirmTurn'
+  const requiredSelections = isConfirmTurnGame
+    ? getRequiredSelections(game.state)
+    : 0
+  const highlightedMoves = isConfirmTurnGame
+    ? [
+        ...game.state.lastTurnMoves,
+        ...pendingCoords.filter(
+          (coord) =>
+            !game.state.lastTurnMoves.some(
+              (lastTurnCoord) =>
+                lastTurnCoord.q === coord.q && lastTurnCoord.r === coord.r,
+            ),
+        ),
+      ]
+    : undefined
 
   return (
     <main className="mx-auto grid h-dvh w-[calc(100%-2rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-[0.6rem] px-4 py-3 max-[1080px]:min-h-dvh max-[1080px]:w-[min(100%,calc(100%-2rem))] max-[720px]:gap-3 max-[720px]:w-[min(100%,calc(100%-1rem))] max-[720px]:px-2 max-[720px]:py-2">
@@ -524,50 +614,76 @@ function GamePage() {
 
       <HexBoard
         canPlay={game.viewerCanMove && !waitingForOpponent}
-        disabled={isSubmittingMove || game.status !== 'active'}
+        disabled={isSubmittingMove || isConfirmingTurn || game.status !== 'active'}
+        highlightedMoves={highlightedMoves}
         onSelect={handleSelect}
         overlay={
           viewerIsPlayer && game.status === 'active' ? (
-            <div className="inline-flex max-w-[11rem] flex-wrap items-center gap-[0.55rem]">
-              <button
-                aria-label={
-                  pendingDrawOfferedBy === null && remainingDrawMoves > 0
-                    ? `Offer draw available in ${remainingDrawMoves} moves`
-                    : isOfferingDraw
-                      ? 'Sending draw offer'
+            <div className="grid max-w-[15rem] gap-[0.55rem]">
+              <div className="inline-flex flex-wrap items-center gap-[0.55rem]">
+                <button
+                  aria-label={
+                    pendingDrawOfferedBy === null && remainingDrawMoves > 0
+                      ? `Offer draw available in ${remainingDrawMoves} moves`
+                      : isOfferingDraw
+                        ? 'Sending draw offer'
+                        : 'Offer draw'
+                  }
+                  className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(207,228,237,0.18)] bg-[rgba(10,24,35,0.72)] p-0 text-[rgba(221,234,240,0.92)] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
+                  disabled={!canOfferDraw || isOfferingDraw}
+                  onClick={() => void handleOfferDraw()}
+                  title={
+                    pendingDrawOfferedBy === null && remainingDrawMoves > 0
+                      ? `Offer draw available in ${remainingDrawMoves} moves`
                       : 'Offer draw'
-                }
-                className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(207,228,237,0.18)] bg-[rgba(10,24,35,0.72)] p-0 text-[rgba(221,234,240,0.92)] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
-                disabled={!canOfferDraw || isOfferingDraw}
-                onClick={() => void handleOfferDraw()}
-                title={
-                  pendingDrawOfferedBy === null && remainingDrawMoves > 0
-                    ? `Offer draw available in ${remainingDrawMoves} moves`
-                    : 'Offer draw'
-                }
-                type="button"
-              >
-                <Handshake size={16} strokeWidth={2.2} />
-              </button>
-              <button
-                aria-label="Forfeit game"
-                className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(214,118,95,0.28)] bg-[rgba(10,24,35,0.72)] p-0 text-[#ffd7cf] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
-                disabled={isForfeitingGame}
-                onClick={() => setIsConfirmingForfeit(true)}
-                title="Forfeit"
-                type="button"
-              >
-                <Flag size={16} strokeWidth={2.2} />
-              </button>
-              {pendingDrawOfferedBy === null && remainingDrawMoves > 0 ? (
-                <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
-                  Draw in {remainingDrawMoves}
-                </span>
+                  }
+                  type="button"
+                >
+                  <Handshake size={16} strokeWidth={2.2} />
+                </button>
+                <button
+                  aria-label="Forfeit game"
+                  className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(214,118,95,0.28)] bg-[rgba(10,24,35,0.72)] p-0 text-[#ffd7cf] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
+                  disabled={isForfeitingGame}
+                  onClick={() => setIsConfirmingForfeit(true)}
+                  title="Forfeit"
+                  type="button"
+                >
+                  <Flag size={16} strokeWidth={2.2} />
+                </button>
+                {pendingDrawOfferedBy === null && remainingDrawMoves > 0 ? (
+                  <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
+                    Draw in {remainingDrawMoves}
+                  </span>
+                ) : null}
+              </div>
+              {isConfirmTurnGame &&
+              viewerSlot !== null &&
+              game.viewerCanMove &&
+              !waitingForOpponent ? (
+                <div className="inline-flex flex-wrap items-center gap-[0.55rem]">
+                  <button
+                    className={`${primaryButton} min-h-10 px-[0.9rem] text-[0.82rem] text-[#0f1820] shadow-[0_10px_24px_rgba(5,13,20,0.22)]`}
+                    disabled={
+                      isConfirmingTurn || pendingCoords.length !== requiredSelections
+                    }
+                    onClick={() => void handleConfirmTurn()}
+                    type="button"
+                  >
+                    {isConfirmingTurn ? 'Confirming…' : 'Confirm move'}
+                  </button>
+                  <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
+                    {pendingCoords.length}/{requiredSelections} selected
+                  </span>
+                </div>
               ) : null}
             </div>
           ) : null
         }
+        pendingMoves={isConfirmTurnGame ? pendingCoords : []}
+        pendingOwner={isConfirmTurnGame ? viewerSlot : null}
         state={game.state}
+        turnCommitMode={game.turnCommitMode}
       />
 
       {game.status === 'finished' ? (

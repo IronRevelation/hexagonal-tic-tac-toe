@@ -84,6 +84,48 @@ export type MovePayload = {
   coord: HexCoord
 }
 
+export type GameHistoryResult = 'win' | 'loss' | 'draw'
+
+export type GameHistoryEntry = {
+  gameId: string
+  seriesId: string | null
+  mode: GameMode
+  timeControl: TimeControlPreset
+  finishReason: GameFinishReason | null
+  result: GameHistoryResult
+  viewerSlot: PlayerSlot
+  opponent: {
+    displayName: string
+    slot: PlayerSlot
+  } | null
+  finishedAt: number
+  updatedAt: number
+  totalMoves: number
+}
+
+export type GameReplayMove = {
+  moveIndex: number
+  turnNumber: number
+  slot: PlayerSlot
+  coord: HexCoord
+  createdAt: number
+}
+
+export type GameReplayData = {
+  gameId: string
+  seriesId: string | null
+  mode: GameMode
+  timeControl: TimeControlPreset
+  finishReason: GameFinishReason | null
+  winnerSlot: PlayerSlot | null
+  viewerSlot: PlayerSlot
+  finishedAt: number
+  updatedAt: number
+  players: Record<PlayerSlot, { displayName: string }>
+  finalState: SerializedGameState
+  moves: GameReplayMove[]
+}
+
 export type PrivacyProcessor = {
   name: string
   purpose: string

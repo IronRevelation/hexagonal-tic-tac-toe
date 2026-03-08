@@ -46,6 +46,14 @@ export function ensureStoredGuestToken(
   return nextToken
 }
 
+export function getClientStoredGuestToken() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return loadStoredGuestToken(window.localStorage)
+}
+
 export function GuestSessionProvider({
   children,
 }: {

@@ -11,9 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HistoryIndexRouteImport } from './routes/history.index'
 import { Route as JoinRoomCodeRouteImport } from './routes/join.$roomCode'
+import { Route as HistoryGameIdRouteImport } from './routes/history.$gameId'
 import { Route as GamesGameIdRouteImport } from './routes/games.$gameId'
 
 const TermsRoute = TermsRouteImport.update({
@@ -26,6 +29,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -36,10 +44,20 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HistoryIndexRoute = HistoryIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HistoryRoute,
+} as any)
 const JoinRoomCodeRoute = JoinRoomCodeRouteImport.update({
   id: '/join/$roomCode',
   path: '/join/$roomCode',
   getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryGameIdRoute = HistoryGameIdRouteImport.update({
+  id: '/$gameId',
+  path: '/$gameId',
+  getParentRoute: () => HistoryRoute,
 } as any)
 const GamesGameIdRoute = GamesGameIdRouteImport.update({
   id: '/games/$gameId',
@@ -50,10 +68,13 @@ const GamesGameIdRoute = GamesGameIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/history': typeof HistoryRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/games/$gameId': typeof GamesGameIdRoute
+  '/history/$gameId': typeof HistoryGameIdRoute
   '/join/$roomCode': typeof JoinRoomCodeRoute
+  '/history/': typeof HistoryIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -61,26 +82,34 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/games/$gameId': typeof GamesGameIdRoute
+  '/history/$gameId': typeof HistoryGameIdRoute
   '/join/$roomCode': typeof JoinRoomCodeRoute
+  '/history': typeof HistoryIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/history': typeof HistoryRouteWithChildren
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/games/$gameId': typeof GamesGameIdRoute
+  '/history/$gameId': typeof HistoryGameIdRoute
   '/join/$roomCode': typeof JoinRoomCodeRoute
+  '/history/': typeof HistoryIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
+    | '/history'
     | '/privacy'
     | '/terms'
     | '/games/$gameId'
+    | '/history/$gameId'
     | '/join/$roomCode'
+    | '/history/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -88,20 +117,26 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/games/$gameId'
+    | '/history/$gameId'
     | '/join/$roomCode'
+    | '/history'
   id:
     | '__root__'
     | '/'
     | '/about'
+    | '/history'
     | '/privacy'
     | '/terms'
     | '/games/$gameId'
+    | '/history/$gameId'
     | '/join/$roomCode'
+    | '/history/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  HistoryRoute: typeof HistoryRouteWithChildren
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   GamesGameIdRoute: typeof GamesGameIdRoute
@@ -124,6 +159,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -138,12 +180,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/history/': {
+      id: '/history/'
+      path: '/'
+      fullPath: '/history/'
+      preLoaderRoute: typeof HistoryIndexRouteImport
+      parentRoute: typeof HistoryRoute
+    }
     '/join/$roomCode': {
       id: '/join/$roomCode'
       path: '/join/$roomCode'
       fullPath: '/join/$roomCode'
       preLoaderRoute: typeof JoinRoomCodeRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/history/$gameId': {
+      id: '/history/$gameId'
+      path: '/$gameId'
+      fullPath: '/history/$gameId'
+      preLoaderRoute: typeof HistoryGameIdRouteImport
+      parentRoute: typeof HistoryRoute
     }
     '/games/$gameId': {
       id: '/games/$gameId'
@@ -155,9 +211,23 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface HistoryRouteChildren {
+  HistoryGameIdRoute: typeof HistoryGameIdRoute
+  HistoryIndexRoute: typeof HistoryIndexRoute
+}
+
+const HistoryRouteChildren: HistoryRouteChildren = {
+  HistoryGameIdRoute: HistoryGameIdRoute,
+  HistoryIndexRoute: HistoryIndexRoute,
+}
+
+const HistoryRouteWithChildren =
+  HistoryRoute._addFileChildren(HistoryRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  HistoryRoute: HistoryRouteWithChildren,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   GamesGameIdRoute: GamesGameIdRoute,

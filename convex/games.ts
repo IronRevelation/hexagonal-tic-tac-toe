@@ -2,6 +2,9 @@ import { v } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
 import type { MutationCtx } from './_generated/server'
 import {
+  compareHistoryEntries,
+  buildHistoryEntry,
+  buildReplayData,
   assertValidMoveCoord,
   buildForfeitGamePatch,
   buildGameSnapshot,
@@ -78,6 +81,66 @@ export const byIdForGuest = query({
     }
 
     return buildGameSnapshot(ctx.db, guest, game)
+  },
+})
+
+export const listHistoryForGuest = query({
+  args: {
+    guestToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const guest = await getGuestByToken(ctx.db, args.guestToken)
+    if (!guest) {
+      return []
+    }
+
+    const participations = await ctx.db
+      .query('gameParticipants')
+      .withIndex('by_guestId', (query) => query.eq('guestId', guest._id))
+      .collect()
+    const playerParticipations = participations.filter(
+      (participant) =>
+        participant.role === 'playerOne' || participant.role === 'playerTwo',
+    )
+    const games = await Promise.all(
+      playerParticipations.map(async (participant) => {
+        const game = await ctx.db.get(participant.gameId)
+        if (!game || game.status !== 'finished') {
+          return null
+        }
+
+        return buildHistoryEntry(ctx.db, guest._id, game, participant)
+      }),
+    )
+
+    return games
+      .filter((game): game is NonNullable<typeof game> => game !== null)
+      .sort(compareHistoryEntries)
+  },
+})
+
+export const replayByIdForGuest = query({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await getGuestByToken(ctx.db, args.guestToken)
+    if (!guest) {
+      return null
+    }
+
+    const game = await ctx.db.get(args.gameId)
+    if (!game || game.status !== 'finished') {
+      return null
+    }
+
+    const participant = await getParticipant(ctx.db, game._id, guest._id)
+    if (!participant) {
+      return null
+    }
+
+    return buildReplayData(ctx.db, guest._id, game, participant)
   },
 })
 

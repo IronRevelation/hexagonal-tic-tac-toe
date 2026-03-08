@@ -47,6 +47,13 @@ export default function Header() {
             Lobby
           </Link>
           <Link
+            to="/history"
+            className={navLink}
+            activeProps={{ className: navLinkActive }}
+          >
+            History
+          </Link>
+          <Link
             to="/about"
             className={navLink}
             activeProps={{ className: navLinkActive }}

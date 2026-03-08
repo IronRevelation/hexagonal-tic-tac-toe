@@ -3,6 +3,7 @@ import { ConvexError, type GenericId } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import type { DatabaseReader, DatabaseWriter, MutationCtx } from './_generated/server'
 import {
+  PLAYER_LABELS,
   createInitialGameState,
   deserializeGameState,
   isValidHexCoord,
@@ -16,8 +17,11 @@ import {
 import type {
   DrawOfferState,
   GameClockSnapshot,
+  GameHistoryEntry,
+  GameHistoryResult,
   GameFinishReason,
   GameMode,
+  GameReplayData,
   GameSnapshot,
   GameStatus,
   GuestSession,
@@ -326,6 +330,31 @@ export function requirePlayerRole(role: ParticipantRole | null): PlayerSlot {
   })
 }
 
+export function isPlayedHistoryRole(
+  role: ParticipantRole | null | undefined,
+): role is 'playerOne' | 'playerTwo' {
+  return role === 'playerOne' || role === 'playerTwo'
+}
+
+export function resolveHistoryResult(
+  viewerSlot: PlayerSlot,
+  winnerSlot: PlayerSlot | null,
+  finishReason: GameFinishReason | null,
+): GameHistoryResult {
+  if (finishReason === 'drawAgreement' || winnerSlot === null) {
+    return 'draw'
+  }
+
+  return viewerSlot === winnerSlot ? 'win' : 'loss'
+}
+
+export function compareHistoryEntries(
+  left: Pick<GameHistoryEntry, 'finishedAt' | 'updatedAt'>,
+  right: Pick<GameHistoryEntry, 'finishedAt' | 'updatedAt'>,
+) {
+  return right.finishedAt - left.finishedAt || right.updatedAt - left.updatedAt
+}
+
 export function isPlayerParticipant(
   participant: ParticipantDoc | null,
 ): participant is PlayerParticipantDoc {
@@ -625,6 +654,101 @@ export async function buildGameSnapshot(
       minMoveIndexForPlayerTwo: game.nextDrawOfferMoveIndexPlayerTwo ?? 0,
     } satisfies DrawOfferState,
     updatedAt: game.updatedAt,
+  }
+}
+
+export async function buildHistoryEntry(
+  db: DatabaseReader,
+  guestId: Id<'guests'>,
+  game: GameDoc,
+  participant: ParticipantDoc,
+): Promise<GameHistoryEntry | null> {
+  if (game.status !== 'finished' || participant.guestId !== guestId) {
+    return null
+  }
+  if (!isPlayedHistoryRole(participant.role)) {
+    return null
+  }
+
+  const viewerSlot = requirePlayerRole(participant.role)
+  const opponentSlot = opponentOf(viewerSlot)
+  const opponentGuestId =
+    opponentSlot === 'one' ? game.playerOneGuestId : game.playerTwoGuestId
+  const opponentGuest = opponentGuestId ? await db.get(opponentGuestId) : null
+  const finishReason = (game.finishReason as GameFinishReason | undefined) ?? null
+
+  return {
+    gameId: game._id,
+    seriesId: game.seriesId ?? null,
+    mode: game.mode as GameMode,
+    timeControl: normalizeGameTimeControl(game),
+    finishReason,
+    result: resolveHistoryResult(viewerSlot, game.winnerSlot ?? null, finishReason),
+    viewerSlot,
+    opponent: opponentGuestId
+      ? {
+          displayName: opponentGuest?.displayName ?? PLAYER_LABELS[opponentSlot],
+          slot: opponentSlot,
+        }
+      : null,
+    finishedAt: game.finishedAt ?? game.updatedAt,
+    updatedAt: game.updatedAt,
+    totalMoves: game.serializedState.totalMoves,
+  }
+}
+
+export async function buildReplayData(
+  db: DatabaseReader,
+  guestId: Id<'guests'>,
+  game: GameDoc,
+  participant: ParticipantDoc,
+): Promise<GameReplayData | null> {
+  if (game.status !== 'finished' || participant.guestId !== guestId) {
+    return null
+  }
+  if (!isPlayedHistoryRole(participant.role)) {
+    return null
+  }
+
+  const viewerSlot = requirePlayerRole(participant.role)
+  const [playerOneGuest, playerTwoGuest, moves] = await Promise.all([
+    game.playerOneGuestId ? db.get(game.playerOneGuestId) : Promise.resolve(null),
+    game.playerTwoGuestId ? db.get(game.playerTwoGuestId) : Promise.resolve(null),
+    db
+      .query('gameMoves')
+      .withIndex('by_gameId_moveIndex', (query) => query.eq('gameId', game._id))
+      .collect(),
+  ])
+
+  return {
+    gameId: game._id,
+    seriesId: game.seriesId ?? null,
+    mode: game.mode as GameMode,
+    timeControl: normalizeGameTimeControl(game),
+    finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
+    winnerSlot: game.winnerSlot ?? null,
+    viewerSlot,
+    finishedAt: game.finishedAt ?? game.updatedAt,
+    updatedAt: game.updatedAt,
+    players: {
+      one: {
+        displayName: playerOneGuest?.displayName ?? PLAYER_LABELS.one,
+      },
+      two: {
+        displayName: playerTwoGuest?.displayName ?? PLAYER_LABELS.two,
+      },
+    },
+    finalState: fromStoredState(game.serializedState),
+    moves: moves.map((move) => ({
+      moveIndex: move.moveIndex,
+      turnNumber: move.turnNumber,
+      slot: move.slot,
+      coord: {
+        q: move.q,
+        r: move.r,
+      },
+      createdAt: move.createdAt,
+    })),
   }
 }
 

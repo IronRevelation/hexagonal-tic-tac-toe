@@ -1,3 +1,5 @@
+import type { GameReplayMove } from './contracts'
+
 export type PlayerSlot = 'one' | 'two'
 
 export type HexCoord = {
@@ -169,6 +171,28 @@ export function applyMove(state: GameState, coord: HexCoord): GameState {
     lastMove: coord,
     winningLine: [],
   }
+}
+
+export function buildReplayState(
+  moves: ReadonlyArray<GameReplayMove>,
+  appliedMoveCount: number,
+): GameState {
+  const clampedMoveCount = Math.max(
+    0,
+    Math.min(Math.floor(appliedMoveCount), moves.length),
+  )
+  let state = createInitialGameState()
+
+  for (let index = 0; index < clampedMoveCount; index += 1) {
+    const move = moves[index]
+    if (!move) {
+      break
+    }
+
+    state = applyMove(state, move.coord)
+  }
+
+  return state
 }
 
 export function compareCoords(a: HexCoord, b: HexCoord): number {

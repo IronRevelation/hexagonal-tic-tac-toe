@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildHistoryEntry,
+  buildReplayData,
   buildResolvedClockPatch,
   buildForfeitGamePatch,
   buildTimeoutGamePatch,
   canCreatePrivateRoom,
   canDeletePrivateRoom,
+  compareHistoryEntries,
   clearDrawOfferFields,
   DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
@@ -12,6 +15,7 @@ import {
   findAvailableMatchmakingOpponent,
   isValidGuestToken,
   normalizeGameTimeControl,
+  resolveHistoryResult,
   resolveTimedGameClock,
 } from './lib'
 
@@ -176,6 +180,133 @@ describe('draw offer helpers', () => {
   it('accepts UUID guest tokens and rejects arbitrary strings', () => {
     expect(isValidGuestToken('123e4567-e89b-42d3-a456-426614174000')).toBe(true)
     expect(isValidGuestToken('not-a-token')).toBe(false)
+  })
+
+  it('resolves history results from the viewer perspective', () => {
+    expect(resolveHistoryResult('one', 'one', 'line')).toBe('win')
+    expect(resolveHistoryResult('one', 'two', 'timeout')).toBe('loss')
+    expect(resolveHistoryResult('two', null, 'drawAgreement')).toBe('draw')
+  })
+
+  it('orders history entries by newest finished timestamp first', () => {
+    const entries = [
+      {
+        finishedAt: 20,
+        updatedAt: 30,
+      },
+      {
+        finishedAt: 50,
+        updatedAt: 10,
+      },
+      {
+        finishedAt: 50,
+        updatedAt: 40,
+      },
+    ]
+
+    expect(entries.sort(compareHistoryEntries)).toEqual([
+      {
+        finishedAt: 50,
+        updatedAt: 40,
+      },
+      {
+        finishedAt: 50,
+        updatedAt: 10,
+      },
+      {
+        finishedAt: 20,
+        updatedAt: 30,
+      },
+    ])
+  })
+
+  it('excludes spectators from history and replay access', async () => {
+    const game = {
+      _id: 'game_1',
+      status: 'finished',
+      finishReason: 'line',
+      updatedAt: 20,
+      finishedAt: 20,
+      mode: 'matchmaking',
+      timeControl: 'unlimited',
+      winnerSlot: 'one',
+      playerOneGuestId: 'guest_1',
+      playerTwoGuestId: 'guest_2',
+      seriesId: 'series_1',
+      serializedState: {
+        totalMoves: 3,
+      },
+    } as never
+    const spectatorParticipant = {
+      guestId: 'guest_3',
+      role: 'spectator',
+    } as never
+    const db = {
+      get: async () => null,
+      query() {
+        throw new Error('query should not be called for spectator access')
+      },
+    }
+
+    expect(
+      await buildHistoryEntry(db as never, 'guest_3' as never, game, spectatorParticipant),
+    ).toBeNull()
+    expect(
+      await buildReplayData(db as never, 'guest_3' as never, game, spectatorParticipant),
+    ).toBeNull()
+  })
+
+  it('builds history entries with opponent data and viewer result', async () => {
+    const game = {
+      _id: 'game_1',
+      status: 'finished',
+      finishReason: 'timeout',
+      updatedAt: 20,
+      finishedAt: 18,
+      mode: 'private',
+      timeControl: '3m',
+      winnerSlot: 'two',
+      playerOneGuestId: 'guest_1',
+      playerTwoGuestId: 'guest_2',
+      seriesId: 'series_1',
+      serializedState: {
+        totalMoves: 9,
+      },
+    } as never
+    const participant = {
+      guestId: 'guest_1',
+      role: 'playerOne',
+    } as never
+    const db = {
+      async get(id: string) {
+        if (id === 'guest_2') {
+          return {
+            displayName: 'River Otter 01',
+          }
+        }
+
+        return null
+      },
+    }
+
+    await expect(
+      buildHistoryEntry(db as never, 'guest_1' as never, game, participant),
+    ).resolves.toEqual({
+      gameId: 'game_1',
+      seriesId: 'series_1',
+      mode: 'private',
+      timeControl: '3m',
+      finishReason: 'timeout',
+      result: 'loss',
+      viewerSlot: 'one',
+      opponent: {
+        displayName: 'River Otter 01',
+        slot: 'two',
+      },
+      finishedAt: 18,
+      updatedAt: 20,
+      totalMoves: 9,
+    })
   })
 
   it('skips stale queued opponents who are already in an active player game', async () => {

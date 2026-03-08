@@ -254,11 +254,11 @@ function LobbyPage() {
           </form>
 
           {!guestToken ? (
-            <p className={`${infoCard} ${mutedCopy} m-0`}>
+            <p className="m-0 rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_86%,white_14%)] px-[0.95rem] py-[0.8rem] text-[0.92rem] leading-[1.7] text-[var(--sea-ink-soft)]">
               Starting or joining a game creates an anonymous guest ID on this
               device, stores a hashed copy on the backend, and records gameplay
               and presence data through Convex and Vercel infrastructure. See{' '}
-              <Link className="font-semibold text-[var(--sea-ink)]" to="/privacy">
+              <Link className="inline font-semibold text-[var(--sea-ink)]" to="/privacy">
                 Privacy
               </Link>{' '}
               for retention, transfers, and deletion options.

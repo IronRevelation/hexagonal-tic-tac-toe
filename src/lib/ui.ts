@@ -3,7 +3,7 @@ export function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 export const pageWrap =
-  'mx-auto w-[min(1180px,calc(100%-2rem))] max-[720px]:w-[min(100%,calc(100%-1rem))]'
+  'mx-auto w-[min(1180px,calc(100%-2rem))] max-[720px]:w-[min(100%,calc(100%-1.25rem))]'
 
 export const surfacePanel =
   'border border-[var(--line)] bg-[linear-gradient(165deg,var(--surface-strong),var(--surface))] shadow-[inset_0_1px_0_var(--inset-glint),0_22px_44px_rgba(23,50,68,0.1),0_6px_18px_rgba(23,50,68,0.08)] backdrop-blur-[4px] transition-[background-color,color,border-color,transform] duration-[180ms]'
@@ -24,10 +24,10 @@ export const navLink =
 export const navLinkActive = `${navLink} text-[var(--sea-ink)] after:scale-x-100`
 
 export const guestChip =
-  'inline-flex min-h-[2.6rem] items-center gap-[0.45rem] rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-[0.9rem] py-[0.55rem] text-[0.88rem] font-bold text-[var(--sea-ink)] transition-[background-color,color,border-color,transform] duration-[180ms]'
+  'inline-flex min-h-[2.6rem] items-center justify-center gap-[0.45rem] rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-[0.9rem] py-[0.55rem] text-center text-[0.88rem] font-bold text-[var(--sea-ink)] transition-[background-color,color,border-color,transform] duration-[180ms]'
 
 const buttonBase =
-  'inline-flex min-h-[2.8rem] cursor-pointer items-center justify-center gap-2 rounded-2xl border px-4 py-3 [font:inherit] no-underline transition-[background-color,color,border-color,transform] duration-[180ms] disabled:cursor-not-allowed disabled:opacity-[0.56]'
+  'inline-flex min-h-[2.8rem] cursor-pointer items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-center [font:inherit] no-underline transition-[background-color,color,border-color,transform] duration-[180ms] disabled:cursor-not-allowed disabled:opacity-[0.56]'
 
 export const primaryButton = `${buttonBase} border-transparent bg-[linear-gradient(135deg,var(--amber),color-mix(in_oklab,var(--amber)_70%,white))] text-[#0f1820] shadow-[0_14px_28px_rgba(217,135,29,0.22)]`
 

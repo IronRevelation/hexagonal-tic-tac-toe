@@ -76,10 +76,10 @@ function PrivacyPage() {
 
   if (!privacyInfo) {
     return (
-      <main className={`${pageWrap} px-4 py-12`}>
-        <section className={`${surfacePanel} rounded-[2rem] p-6 sm:p-8`}>
+      <main className={`${pageWrap} px-4 py-8 max-[720px]:px-2 max-[720px]:py-5`}>
+        <section className={`${surfacePanel} rounded-[2rem] p-6 max-[720px]:rounded-[1.7rem] max-[720px]:p-5 sm:p-8`}>
           <p className={`${eyebrow} mb-2`}>Privacy</p>
-          <h1 className={`${displayTitle} m-0 text-4xl text-[var(--sea-ink)] sm:text-5xl`}>
+          <h1 className={`${displayTitle} m-0 text-4xl text-[var(--sea-ink)] max-[720px]:text-[2.2rem] sm:text-5xl`}>
             Loading privacy notice…
           </h1>
         </section>
@@ -88,10 +88,10 @@ function PrivacyPage() {
   }
 
   return (
-    <main className={`${pageWrap} grid gap-6 px-4 py-12`}>
-      <section className={`${surfacePanel} grid gap-4 rounded-[2rem] p-6 sm:p-8`}>
+    <main className={`${pageWrap} grid gap-5 px-4 py-8 max-[720px]:px-2 max-[720px]:py-5`}>
+      <section className={`${surfacePanel} grid gap-4 rounded-[2rem] p-6 max-[720px]:rounded-[1.7rem] max-[720px]:p-5 sm:p-8`}>
         <p className={`${eyebrow} m-0`}>Privacy</p>
-        <h1 className={`${displayTitle} m-0 text-4xl text-[var(--sea-ink)] sm:text-5xl`}>
+        <h1 className={`${displayTitle} m-0 text-4xl text-[var(--sea-ink)] max-[720px]:text-[2.2rem] sm:text-5xl`}>
           Anonymous play still uses personal data.
         </h1>
         <p className="m-0 max-w-[50rem] leading-[1.8] text-[var(--sea-ink-soft)]">
@@ -105,7 +105,7 @@ function PrivacyPage() {
         </p>
       </section>
 
-      <section className={`${surfacePanel} grid gap-6 rounded-[2rem] p-6 sm:p-8`}>
+      <section className={`${surfacePanel} grid gap-6 rounded-[2rem] p-6 max-[720px]:rounded-[1.7rem] max-[720px]:p-5 sm:p-8`}>
         <div className="grid gap-3">
           <h2 className="m-0 text-2xl text-[var(--sea-ink)]">What we process</h2>
           <ul className="m-0 grid gap-2 pl-5 text-[var(--sea-ink-soft)]">
@@ -134,7 +134,7 @@ function PrivacyPage() {
         </div>
       </section>
 
-      <section className={`${surfacePanel} grid gap-6 rounded-[2rem] p-6 sm:p-8`}>
+      <section className={`${surfacePanel} grid gap-6 rounded-[2rem] p-6 max-[720px]:rounded-[1.7rem] max-[720px]:p-5 sm:p-8`}>
         <div className="grid gap-3">
           <h2 className="m-0 text-2xl text-[var(--sea-ink)]">Processors</h2>
           <ul className="m-0 grid gap-3 pl-5 text-[var(--sea-ink-soft)]">
@@ -177,7 +177,7 @@ function PrivacyPage() {
         </div>
       </section>
 
-      <section className={`${surfacePanel} grid gap-4 rounded-[2rem] p-6 sm:p-8`}>
+      <section className={`${surfacePanel} grid gap-4 rounded-[2rem] p-6 max-[720px]:rounded-[1.7rem] max-[720px]:p-5 sm:p-8`}>
         <p className={`${eyebrow} m-0`}>Privacy tools</p>
         <h2 className="m-0 text-2xl text-[var(--sea-ink)]">Export or erase your guest data</h2>
         <p className={`${mutedCopy} m-0`}>

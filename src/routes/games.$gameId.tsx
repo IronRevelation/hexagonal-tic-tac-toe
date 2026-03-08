@@ -357,19 +357,21 @@ function GamePage() {
     !game.nextGameId
 
   return (
-    <main className="mx-auto grid h-dvh w-[calc(100%-2rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-[0.6rem] px-4 py-3 max-[1080px]:min-h-dvh max-[1080px]:w-[min(100%,calc(100%-2rem))] max-[720px]:w-[min(100%,calc(100%-1rem))]">
-      <section className={`${surfacePanel} rounded-[1.6rem] px-[0.95rem] py-[0.65rem]`}>
-        <div className="grid items-center gap-x-4 gap-y-2 min-[1240px]:grid-cols-[auto_minmax(0,1fr)_auto] max-[1239px]:grid-cols-[auto_minmax(0,1fr)] max-[920px]:grid-cols-1">
-          <div className="flex flex-wrap items-center gap-3">
+    <main className="mx-auto grid h-dvh w-[calc(100%-2rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-[0.6rem] px-4 py-3 max-[1080px]:min-h-dvh max-[1080px]:w-[min(100%,calc(100%-2rem))] max-[720px]:gap-3 max-[720px]:w-[min(100%,calc(100%-1rem))] max-[720px]:px-2 max-[720px]:py-2">
+      <section
+        className={`${surfacePanel} rounded-[1.6rem] px-[0.95rem] py-[0.65rem] max-[720px]:rounded-[1.25rem] max-[720px]:px-3 max-[720px]:py-3`}
+      >
+        <div className="grid items-center gap-x-4 gap-y-2 min-[1240px]:grid-cols-[auto_minmax(0,1fr)_auto] max-[1239px]:grid-cols-[auto_minmax(0,1fr)] max-[920px]:grid-cols-1 max-[720px]:gap-y-3">
+          <div className="flex flex-wrap items-center gap-3 max-[720px]:gap-x-4 max-[720px]:gap-y-2">
             <Link
               to="/"
-              className="inline-flex items-center gap-[0.55rem] text-[0.96rem] font-bold text-[var(--sea-ink)] no-underline"
+              className="inline-flex items-center gap-[0.55rem] text-[0.96rem] font-bold text-[var(--sea-ink)] no-underline max-[720px]:text-[0.9rem]"
             >
               <span className={brandOrb} />
               <span>Hexagonal Tic-Tac-Toe</span>
             </Link>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 max-[720px]:gap-3">
               <Link
                 to="/"
                 className={navLink}
@@ -387,9 +389,9 @@ function GamePage() {
             </div>
           </div>
 
-          <div className="grid min-w-0 gap-x-4 gap-y-2 text-left min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[1240px]:justify-self-center">
+          <div className="grid min-w-0 gap-x-4 gap-y-2 text-left min-[760px]:grid-cols-[minmax(0,1fr)_auto] min-[1240px]:justify-self-center max-[720px]:gap-y-2">
             <div className="grid min-w-0 gap-[0.2rem] content-center">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-[var(--sea-ink-soft)]">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.72rem] text-[var(--sea-ink-soft)] max-[720px]:text-[0.68rem]">
                 <span className="font-bold uppercase tracking-[0.12em]">
                   {summaryLabel}
                 </span>
@@ -399,47 +401,55 @@ function GamePage() {
                   </span>
                 ) : null}
               </div>
-              <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.98rem] leading-[1.2] max-[720px]:whitespace-normal">
+              <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.98rem] leading-[1.2] max-[720px]:text-[0.9rem] max-[720px]:leading-[1.3] max-[720px]:whitespace-normal">
                 {buildTurnCopy(game, currentPlayerLabel, winnerLabel)}
               </strong>
             </div>
             {game.roomCode && privateRoomLink ? (
-              <div className="grid justify-items-stretch gap-[0.4rem] min-[760px]:justify-self-end">
-                <span className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-bold leading-none tracking-[0.12em] text-[var(--sea-ink)]">
+              <div className="grid justify-items-stretch gap-[0.4rem] min-[760px]:justify-self-end max-[720px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[720px]:gap-2">
+                <span className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-bold leading-none tracking-[0.12em] text-[var(--sea-ink)] max-[720px]:h-[2.2rem] max-[720px]:w-full">
                   {game.roomCode}
                 </span>
                 <button
-                  className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[var(--sea-ink-soft)]"
+                  aria-label={copiedShareLink ? 'Room link copied' : 'Copy room link'}
+                  className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[var(--sea-ink-soft)] max-[720px]:h-[2.2rem] max-[720px]:w-full max-[720px]:px-0"
                   onClick={() => void handleCopyShareLink()}
+                  title={copiedShareLink ? 'Copied' : 'Copy link'}
                   type="button"
                 >
-                  <span className="inline-flex min-w-[4.9rem] items-center justify-start gap-[0.35rem]">
+                  <span className="inline-flex items-center justify-center gap-[0.35rem]">
                     {copiedShareLink ? (
-                      <Check size={13} strokeWidth={2.5} />
+                      <Check size={14} strokeWidth={2.5} />
                     ) : (
-                      <Copy size={13} strokeWidth={2.2} />
+                      <Copy size={14} strokeWidth={2.2} />
                     )}
-                    {copiedShareLink ? 'Copied' : 'Copy link'}
+                    <span className="max-[720px]:hidden">
+                      {copiedShareLink ? 'Copied' : 'Copy link'}
+                    </span>
                   </span>
                 </button>
                 {canDeleteRoom ? (
                   <button
-                    className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[rgba(214,118,95,0.22)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[#d98d79]"
+                    aria-label="Delete private room"
+                    className="inline-flex h-[1.9rem] w-[7.6rem] items-center justify-center rounded-full border border-[rgba(214,118,95,0.18)] bg-[color-mix(in_oklab,var(--surface)_80%,transparent_20%)] px-[0.85rem] py-0 text-[0.74rem] font-medium leading-none text-[#d98d79] max-[720px]:h-[2.2rem] max-[720px]:w-full max-[720px]:px-0"
                     onClick={() => setIsConfirmingDeleteRoom(true)}
+                    title="Delete room"
                     type="button"
                   >
-                    <span className="inline-flex min-w-[4.9rem] items-center justify-start gap-[0.35rem]">
-                      <Trash2 size={13} strokeWidth={2.2} />
-                      Delete
+                    <span className="inline-flex items-center justify-center gap-[0.35rem]">
+                      <Trash2 size={14} strokeWidth={2.2} />
+                      <span className="max-[720px]:hidden">Delete</span>
                     </span>
                   </button>
-                ) : null}
+                ) : (
+                  <span className="hidden max-[720px]:block" />
+                )}
               </div>
             ) : null}
           </div>
 
           <div className="justify-self-end max-[1240px]:col-span-2 max-[1240px]:justify-self-stretch max-[920px]:col-span-1">
-            <div className="flex flex-wrap items-center gap-[0.45rem] max-[820px]:justify-start">
+            <div className="flex flex-wrap items-center gap-[0.45rem] max-[820px]:justify-start max-[720px]:grid max-[720px]:grid-cols-2 max-[720px]:gap-2">
               <PlayerCard
                 active={currentPlayer === 'one' && game.status === 'active'}
                 label={game.players.one?.displayName ?? PLAYER_LABELS.one}
@@ -465,7 +475,7 @@ function GamePage() {
         </div>
 
         {incomingDrawOffer ? (
-          <section className="flex items-center justify-between gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem] max-[720px]:flex-col max-[720px]:items-start">
+          <section className="mt-3 flex items-center justify-between gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem] max-[720px]:flex-col max-[720px]:items-start">
             <div>
               <strong>Draw offered by {drawOfferPlayerLabel}</strong>
               <p className="mt-[0.2rem] text-[0.84rem] text-[var(--sea-ink-soft)]">
@@ -494,7 +504,7 @@ function GamePage() {
         ) : null}
 
         {outgoingDrawOffer ? (
-          <section className="flex items-center gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem]">
+          <section className="mt-3 flex items-center gap-[0.9rem] rounded-[1.1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_82%,transparent_18%)] px-[0.9rem] py-[0.8rem]">
             <div>
               <strong>Draw offer sent</strong>
               <p className="mt-[0.2rem] text-[0.84rem] text-[var(--sea-ink-soft)]">
@@ -705,14 +715,14 @@ function PlayerCard({
   return (
     <div
       className={cn(
-        'grid min-w-[10.2rem] gap-[0.28rem] rounded-[1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_78%,transparent_22%)] px-[0.8rem] py-[0.65rem] max-[720px]:w-full max-[720px]:min-w-0',
+        'grid min-w-[10.2rem] gap-[0.28rem] rounded-[1rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_78%,transparent_22%)] px-[0.8rem] py-[0.65rem] max-[720px]:min-w-0 max-[720px]:rounded-[0.95rem] max-[720px]:px-[0.7rem] max-[720px]:py-[0.6rem]',
         active &&
           'border-[color-mix(in_oklab,var(--lagoon)_28%,var(--line))] bg-[color-mix(in_oklab,var(--surface-strong)_84%,transparent_16%)] text-[var(--sea-ink)]',
       )}
     >
       <div className="flex items-center gap-[0.55rem]">
         <span
-          className="inline-flex h-[1.45rem] w-[1.45rem] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-[0.82rem] leading-none font-extrabold text-[var(--sea-ink-soft)] transition-[color] duration-[180ms]"
+          className="inline-flex h-[1.45rem] w-[1.45rem] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-[0.82rem] leading-none font-extrabold text-[var(--sea-ink-soft)] transition-[color] duration-[180ms] max-[720px]:h-[1.3rem] max-[720px]:w-[1.3rem] max-[720px]:text-[0.74rem]"
           style={
             active
               ? { color: slot === 'one' ? 'var(--amber)' : 'var(--lagoon)' }
@@ -721,11 +731,13 @@ function PlayerCard({
         >
           {slot === 'one' ? 'X' : 'O'}
         </span>
-        <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.84rem] font-bold">
+        <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.84rem] font-bold max-[720px]:text-[0.78rem]">
           {label}
         </strong>
       </div>
-      <span className="text-[0.7rem] text-[var(--sea-ink-soft)]">{note}</span>
+      <span className="text-[0.7rem] text-[var(--sea-ink-soft)] max-[720px]:text-[0.66rem]">
+        {note}
+      </span>
     </div>
   )
 }

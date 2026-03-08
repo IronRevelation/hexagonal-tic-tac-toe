@@ -32,6 +32,7 @@ const MIN_ZOOM = 0.45
 const MAX_ZOOM = 2.2
 const DRAG_THRESHOLD = 6
 const INITIAL_CAMERA: Camera = { x: 0, y: 0, zoom: 1 }
+const MOBILE_INITIAL_ZOOM = 0.76
 
 export default function HexBoard({
   state,
@@ -53,6 +54,7 @@ export default function HexBoard({
   const cameraRef = useRef(INITIAL_CAMERA)
   const viewportRef = useRef<ViewportSize>({ width: 0, height: 0 })
   const dragStateRef = useRef<DragState | null>(null)
+  const hasAppliedInitialViewportZoomRef = useRef(false)
   const board = new Map(state.board)
   const winningKeys = new Set(state.winningLine.map(coordKey))
   const lastMoveKey = state.lastMove ? coordKey(state.lastMove) : null
@@ -76,6 +78,16 @@ export default function HexBoard({
 
       viewportRef.current = nextViewport
       setViewport(nextViewport)
+
+      if (!hasAppliedInitialViewportZoomRef.current) {
+        hasAppliedInitialViewportZoomRef.current = true
+        const nextCamera =
+          nextViewport.width <= 720
+            ? { ...INITIAL_CAMERA, zoom: MOBILE_INITIAL_ZOOM }
+            : INITIAL_CAMERA
+        cameraRef.current = nextCamera
+        setCamera(nextCamera)
+      }
     })
 
     observer.observe(boardElement)
@@ -224,7 +236,7 @@ export default function HexBoard({
 
   return (
     <section
-      className={`${surfacePanel} relative h-full min-h-0 rounded-[1.8rem] p-[0.55rem] max-[720px]:min-h-[22rem] max-[720px]:rounded-[1.35rem]`}
+      className={`${surfacePanel} relative h-full min-h-0 rounded-[1.8rem] p-[0.55rem] max-[720px]:min-h-[26rem] max-[720px]:rounded-[1.35rem]`}
     >
       <div
         className={`board-viewport ${isDragging ? 'is-dragging' : ''} ${

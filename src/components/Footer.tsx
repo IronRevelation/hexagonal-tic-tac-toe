@@ -13,13 +13,13 @@ export default function Footer() {
   }
 
   return (
-    <footer className="mt-12 px-4 pb-10 pt-8 text-[var(--sea-ink-soft)]">
+    <footer className="mt-10 px-4 pb-8 pt-6 text-[var(--sea-ink-soft)] max-[720px]:mt-8">
       <div className={`${pageWrap} border-t border-[var(--line)] py-5`}>
-        <div className="flex flex-col gap-2 text-sm md:flex-row md:items-center md:justify-between md:gap-6">
+        <div className="flex flex-col gap-3 text-sm max-[720px]:text-[0.95rem] md:flex-row md:items-center md:justify-between md:gap-6">
           <p className="m-0 font-medium text-[var(--sea-ink)]">
             &copy; {year} Hexagonal Tic-Tac-Toe Online
           </p>
-          <p className="m-0 flex flex-wrap items-center gap-3 md:text-center">
+          <p className="m-0 flex flex-wrap items-center gap-x-4 gap-y-2 md:text-center">
             <Link className="font-semibold text-[var(--sea-ink)] no-underline" to="/privacy">
               Privacy
             </Link>
@@ -44,7 +44,7 @@ export default function Footer() {
               webgoatguy
             </a>
           </p>
-          <p className="m-0 text-[color:color-mix(in_oklab,var(--sea-ink-soft)_82%,transparent)] md:text-right">
+          <p className="m-0 max-w-[32rem] text-[color:color-mix(in_oklab,var(--sea-ink-soft)_82%,transparent)] md:text-right">
             Independent fan project, not affiliated with webgoatguy.
           </p>
         </div>

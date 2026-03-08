@@ -8,11 +8,11 @@ export const Route = createFileRoute('/terms')({
 
 function TermsPage() {
   return (
-    <main className={`${pageWrap} px-4 py-12`}>
-      <section className={`${surfacePanel} grid gap-6 rounded-[2rem] p-6 sm:p-8`}>
+    <main className={`${pageWrap} px-4 py-8 max-[720px]:px-2 max-[720px]:py-5`}>
+      <section className={`${surfacePanel} grid gap-6 rounded-[2rem] p-6 max-[720px]:rounded-[1.7rem] max-[720px]:p-5 sm:p-8`}>
         <div className="grid gap-3">
           <p className={`${eyebrow} m-0`}>Terms</p>
-          <h1 className={`${displayTitle} m-0 text-4xl text-[var(--sea-ink)] sm:text-5xl`}>
+          <h1 className={`${displayTitle} m-0 text-4xl text-[var(--sea-ink)] max-[720px]:text-[2.2rem] sm:text-5xl`}>
             Play fairly and use the service responsibly.
           </h1>
           <p className="m-0 max-w-[50rem] leading-[1.8] text-[var(--sea-ink-soft)]">

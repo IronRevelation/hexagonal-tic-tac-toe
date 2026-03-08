@@ -140,28 +140,28 @@ function LobbyPage() {
   }
 
   return (
-    <main className={`${pageWrap} px-4 pb-16 pt-10`}>
-      <section className="mx-auto grid max-w-[54rem] justify-items-center gap-10">
-        <div className="grid content-start justify-items-center gap-6 text-center">
-          <div className="grid justify-items-center gap-3">
+    <main className={`${pageWrap} px-4 pb-14 pt-7 max-[720px]:px-2 max-[720px]:pb-10 max-[720px]:pt-4`}>
+      <section className="mx-auto grid max-w-[54rem] justify-items-center gap-8 max-[720px]:gap-6">
+        <div className="grid content-start justify-items-center gap-5 text-center max-[720px]:justify-items-stretch">
+          <div className="grid justify-items-center gap-3 max-[720px]:text-center">
             <h1
-              className={`${displayTitle} m-0 max-w-[14ch] text-[clamp(2.8rem,6vw,5.2rem)] max-[720px]:max-w-[11ch] max-[720px]:text-[clamp(2.15rem,11vw,3.3rem)]`}
+              className={`${displayTitle} m-0 max-w-[14ch] text-[clamp(2.8rem,6vw,5.2rem)] max-[720px]:max-w-none max-[720px]:text-[clamp(2.15rem,10vw,3.5rem)]`}
             >
               Hexagonal tic-tac-toe.
             </h1>
-            <p className="m-0 max-w-[34rem] text-[1.05rem] leading-[1.85] text-[var(--sea-ink-soft)]">
+            <p className="m-0 max-w-[34rem] text-[1.05rem] leading-[1.85] text-[var(--sea-ink-soft)] max-[720px]:text-[1rem] max-[720px]:leading-[1.7]">
               Start a quick match, open a private room for a friend, or join a
               game with a code. No account needed.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={guestChip}>
+          <div className="flex flex-wrap items-center justify-center gap-3 max-[720px]:grid max-[720px]:grid-cols-[minmax(0,1fr)_auto] max-[720px]:items-stretch">
+            <span className={`${guestChip} max-[720px]:w-full`}>
               {isLoading
                 ? 'Loading guest…'
                 : session?.displayName ?? 'Guest created on first game'}
             </span>
-            <Link className={secondaryButton} to="/about">
+            <Link className={`${secondaryButton} max-[720px]:min-h-[3rem] max-[720px]:px-5`} to="/about">
               Rules
             </Link>
           </div>
@@ -174,7 +174,7 @@ function LobbyPage() {
         </div>
 
         <div
-          className={`${surfacePanel} grid w-full max-w-[42rem] content-start gap-5 rounded-[2rem] p-[clamp(1.6rem,2.4vw,2.2rem)]`}
+          className={`${surfacePanel} grid w-full max-w-[42rem] content-start gap-5 rounded-[2rem] p-[clamp(1.6rem,2.4vw,2.2rem)] max-[720px]:gap-4 max-[720px]:rounded-[1.7rem] max-[720px]:p-5`}
         >
           {hasActiveGame ? (
             <button
@@ -208,7 +208,7 @@ function LobbyPage() {
             </>
           ) : (
             <button
-              className={primaryButton}
+              className={`${primaryButton} max-[720px]:w-full`}
               disabled={pendingAction !== null || isAlreadyPlaying}
               onClick={() => void handleJoinMatchmaking()}
               type="button"
@@ -218,7 +218,7 @@ function LobbyPage() {
           )}
 
           <button
-            className={secondaryButton}
+            className={`${secondaryButton} max-[720px]:w-full`}
             disabled={pendingAction !== null || !canCreatePrivateRoom}
             onClick={() => void handleCreatePrivateGame()}
             type="button"
@@ -243,18 +243,18 @@ function LobbyPage() {
                 placeholder="ABC123"
                 value={roomCode}
               />
-              <button className={primaryButton} type="submit">
+              <button className={`${primaryButton} max-[520px]:w-full`} type="submit">
                 Join room
               </button>
             </div>
-            <p className={`${mutedCopy} m-0`}>
+            <p className={`${mutedCopy} m-0 max-[720px]:text-[0.98rem] max-[720px]:leading-[1.7]`}>
               If the room has an open player slot, you&apos;ll join as a player. If both
               player slots are taken, you&apos;ll join as a spectator.
             </p>
           </form>
 
           {!guestToken ? (
-            <p className="m-0 rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_86%,white_14%)] px-[0.95rem] py-[0.8rem] text-[0.92rem] leading-[1.7] text-[var(--sea-ink-soft)]">
+            <p className="m-0 rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_86%,white_14%)] px-[0.95rem] py-[0.8rem] text-[0.92rem] leading-[1.7] text-[var(--sea-ink-soft)] max-[720px]:text-[0.98rem]">
               Starting or joining a game creates an anonymous guest ID on this
               device, stores a hashed copy on the backend, and records gameplay
               and presence data through Convex and Vercel infrastructure. See{' '}

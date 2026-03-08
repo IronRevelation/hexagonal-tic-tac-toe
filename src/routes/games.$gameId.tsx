@@ -9,6 +9,7 @@ import HexBoard from '../components/HexBoard'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
 import { asGameId } from '../lib/ids'
+import { useGameClock } from '../lib/useGameClock'
 import {
   brandOrb,
   cn,
@@ -59,6 +60,7 @@ function GamePage() {
   const forfeitGame = useMutation(api.games.forfeitGame)
   const leaveFinishedGame = useMutation(api.guests.leaveFinishedGame)
   const deletePrivateRoom = useMutation(api.privateGames.remove)
+  const liveClock = useGameClock(game?.clock ?? null)
 
   useVisibleHeartbeat(guestToken, gameId)
 
@@ -355,6 +357,7 @@ function GamePage() {
     opponentPresence !== null &&
     !opponentPresence.isOnline &&
     !game.nextGameId
+  const clockText = liveClock?.displayText ?? null
 
   return (
     <main className="mx-auto grid h-dvh w-[calc(100%-2rem)] max-w-[1680px] grid-rows-[auto_minmax(0,1fr)] gap-[0.6rem] px-4 py-3 max-[1080px]:min-h-dvh max-[1080px]:w-[min(100%,calc(100%-2rem))] max-[720px]:gap-3 max-[720px]:w-[min(100%,calc(100%-1rem))] max-[720px]:px-2 max-[720px]:py-2">
@@ -452,12 +455,14 @@ function GamePage() {
             <div className="flex flex-wrap items-center gap-[0.45rem] max-[820px]:justify-start max-[720px]:grid max-[720px]:grid-cols-2 max-[720px]:gap-2">
               <PlayerCard
                 active={currentPlayer === 'one' && game.status === 'active'}
+                clockText={clockText?.one ?? null}
                 label={game.players.one?.displayName ?? PLAYER_LABELS.one}
                 note={game.players.one?.isOnline ? 'Online' : 'Offline'}
                 slot="one"
               />
               <PlayerCard
                 active={currentPlayer === 'two' && game.status === 'active'}
+                clockText={clockText?.two ?? null}
                 label={game.players.two?.displayName ?? PLAYER_LABELS.two}
                 note={
                   game.players.two
@@ -580,6 +585,8 @@ function GamePage() {
             <p className="m-0 text-[var(--sea-ink-soft)]">
               {game.finishReason === 'drawAgreement'
                 ? 'Both players agreed to a draw.'
+                : game.finishReason === 'timeout'
+                  ? `${winnerLabel ?? 'A player'} won on time.`
                 : game.finishReason === 'forfeit'
                   ? `${winnerLabel ?? 'A player'} won by forfeit.`
                   : opponentLeft
@@ -703,11 +710,13 @@ function GamePage() {
 
 function PlayerCard({
   active,
+  clockText,
   label,
   note,
   slot,
 }: {
   active: boolean
+  clockText: string | null
   label: string
   note: string
   slot: PlayerSlot
@@ -735,6 +744,11 @@ function PlayerCard({
           {label}
         </strong>
       </div>
+      {clockText ? (
+        <strong className="font-['Manrope',sans-serif] text-[1.42rem] font-extrabold tabular-nums tracking-[-0.04em] text-[var(--sea-ink)] max-[720px]:text-[1.22rem]">
+          {clockText}
+        </strong>
+      ) : null}
       <span className="text-[0.7rem] text-[var(--sea-ink-soft)] max-[720px]:text-[0.66rem]">
         {note}
       </span>
@@ -756,7 +770,9 @@ function buildTurnCopy(
   }
 
   if (winnerLabel) {
-    return game.finishReason === 'forfeit'
+    return game.finishReason === 'timeout'
+      ? `${winnerLabel} wins on time.`
+      : game.finishReason === 'forfeit'
       ? `${winnerLabel} wins by forfeit.`
       : `${winnerLabel} wins with six in a row.`
   }
@@ -775,6 +791,10 @@ function buildTurnCopy(
 function buildFinishedTitle(game: GameSnapshot, winnerLabel: string | null) {
   if (game.finishReason === 'drawAgreement') {
     return 'Draw'
+  }
+
+  if (game.finishReason === 'timeout') {
+    return `${winnerLabel ?? 'Player'} wins on time!`
   }
 
   return `${winnerLabel ?? 'Player'} won!`

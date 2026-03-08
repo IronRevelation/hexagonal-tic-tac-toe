@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 import { mutation } from './_generated/server'
 import {
   assertCanJoinAsPlayer,
+  buildResolvedClockPatch,
   canCreatePrivateRoom,
   canDeletePrivateRoom,
   createStoredInitialState,
@@ -11,15 +12,25 @@ import {
   isPlayerParticipant,
   listParticipants,
   now,
+  refreshClockTimeout,
+  resolveTimedGameClock,
   refreshDisconnectForfeit,
   requireGuest,
   throwGameError,
 } from './lib'
 import type { RoomJoinResult } from '../shared/contracts'
+import { getInitialClockMs } from '../shared/timeControl'
 
 export const create = mutation({
   args: {
     guestToken: v.string(),
+    timeControl: v.union(
+      v.literal('unlimited'),
+      v.literal('1m'),
+      v.literal('3m'),
+      v.literal('5m'),
+      v.literal('10m'),
+    ),
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
@@ -34,11 +45,15 @@ export const create = mutation({
     }
 
     const timestamp = now()
+    const initialClockMs = getInitialClockMs(args.timeControl)
     const gameId = await ctx.db.insert('games', {
       mode: 'private',
       status: 'waiting',
+      timeControl: args.timeControl,
       createdByGuestId: guest._id,
       playerOneGuestId: guest._id,
+      playerOneTimeRemainingMs: initialClockMs ?? undefined,
+      playerTwoTimeRemainingMs: initialClockMs ?? undefined,
       serializedState: createStoredInitialState(),
       updatedAt: timestamp,
       rematchRequestedByPlayerOne: false,
@@ -136,6 +151,19 @@ export const join = mutation({
           playerTwoGuestId: guest._id,
           startedAt: timestamp,
           updatedAt: timestamp,
+          ...buildResolvedClockPatch(
+            resolveTimedGameClock(
+              {
+                ...game,
+                status: 'active',
+                turnStartedAt: timestamp,
+              },
+              'one',
+              timestamp,
+            ),
+            'one',
+            timestamp,
+          ),
         })
         const playerOneParticipant = await ctx.db.get(creator._id)
         const playerTwoParticipant = await ctx.db.get(playerTwoParticipantId)
@@ -146,6 +174,19 @@ export const join = mutation({
 
         await refreshDisconnectForfeit(ctx, game._id, playerOneParticipant, timestamp)
         await refreshDisconnectForfeit(ctx, game._id, playerTwoParticipant, timestamp)
+        await refreshClockTimeout(
+          ctx,
+          game,
+          resolveTimedGameClock(
+            {
+              ...game,
+              status: 'active',
+              turnStartedAt: timestamp,
+            },
+            'one',
+            timestamp,
+          ),
+        )
 
         return {
           gameId: game._id,
@@ -170,6 +211,19 @@ export const join = mutation({
         playerTwoGuestId: creator.guestId,
         startedAt: timestamp,
         updatedAt: timestamp,
+        ...buildResolvedClockPatch(
+          resolveTimedGameClock(
+            {
+              ...game,
+              status: 'active',
+              turnStartedAt: timestamp,
+            },
+            'one',
+            timestamp,
+          ),
+          'one',
+          timestamp,
+        ),
       })
       const playerOneParticipant = await ctx.db.get(playerOneParticipantId)
       const playerTwoParticipant = await ctx.db.get(creator._id)
@@ -180,6 +234,19 @@ export const join = mutation({
 
       await refreshDisconnectForfeit(ctx, game._id, playerOneParticipant, timestamp)
       await refreshDisconnectForfeit(ctx, game._id, playerTwoParticipant, timestamp)
+      await refreshClockTimeout(
+        ctx,
+        game,
+        resolveTimedGameClock(
+          {
+            ...game,
+            status: 'active',
+            turnStartedAt: timestamp,
+          },
+          'one',
+          timestamp,
+        ),
+      )
 
       return {
         gameId: game._id,

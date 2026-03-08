@@ -1,27 +1,35 @@
 import { v } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
+import type { MutationCtx } from './_generated/server'
 import {
   assertValidMoveCoord,
   buildForfeitGamePatch,
   buildGameSnapshot,
+  buildResolvedClockPatch,
+  buildTimeoutGamePatch,
   clearDrawOfferFields,
   createStoredInitialState,
   DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
+  type GameDoc,
   getGuestByToken,
   getParticipant,
   isPlayerParticipant,
   listParticipants,
   loadGameState,
+  normalizeGameTimeControl,
   now,
+  refreshClockTimeout,
   refreshDisconnectForfeit,
   requireGuest,
   requirePlayerRole,
+  resolveTimedGameClock,
   throwGameError,
   toStoredState,
 } from './lib'
 import { applyMove, coordKey, serializeGameState } from '../shared/hexGame'
+import { getInitialClockMs } from '../shared/timeControl'
 
 export const resumeForGuest = query({
   args: {
@@ -99,6 +107,13 @@ export const placeMove = mutation({
 
     const playerSlot = requirePlayerRole(participant.role)
     const state = loadGameState(game)
+    const timestamp = now()
+    const resolvedClock = await ensureGameHasTimeRemaining(
+      ctx,
+      game,
+      state.currentPlayer,
+      timestamp,
+    )
     if (state.currentPlayer !== playerSlot) {
       throwGameError('NOT_YOUR_TURN', 'It is not your turn.')
     }
@@ -116,8 +131,8 @@ export const placeMove = mutation({
             ...drawOfferCooldownPatch(pendingDrawOfferedBy, state.totalMoves),
           }
     const nextState = applyMove(state, args.coord)
-    const timestamp = now()
     const nextSerializedState = serializeGameState(nextState)
+    const nextActivePlayer = nextState.winner ? null : nextState.currentPlayer
 
     await ctx.db.insert('gameMoves', {
       gameId: game._id,
@@ -136,9 +151,24 @@ export const placeMove = mutation({
       status: nextState.winner ? 'finished' : 'active',
       finishedAt: nextState.winner ? timestamp : undefined,
       updatedAt: timestamp,
+      ...buildResolvedClockPatch(resolvedClock, nextActivePlayer, timestamp),
       ...pendingDrawPatch,
       ...(nextState.winner ? clearDrawOfferFields() : {}),
     })
+
+    if (normalizeGameTimeControl(game) !== 'unlimited') {
+      await refreshClockTimeout(
+        ctx,
+        game,
+        resolvedClock
+          ? {
+              ...resolvedClock,
+              activePlayer: nextActivePlayer,
+              serverNow: timestamp,
+            }
+          : null,
+      )
+    }
 
     return {
       ok: true,
@@ -169,8 +199,22 @@ export const forfeitGame = mutation({
 
     const slot = requirePlayerRole(participant.role)
     const timestamp = now()
+    const state = loadGameState(game)
+    const resolvedClock = await ensureGameHasTimeRemaining(
+      ctx,
+      game,
+      state.currentPlayer,
+      timestamp,
+    )
 
-    await ctx.db.patch(game._id, buildForfeitGamePatch(slot, timestamp))
+    await ctx.db.patch(game._id, {
+      ...buildForfeitGamePatch(slot, timestamp),
+      ...buildResolvedClockPatch(resolvedClock, null, timestamp),
+    })
+
+    if (normalizeGameTimeControl(game) !== 'unlimited') {
+      await refreshClockTimeout(ctx, game, null)
+    }
 
     return { ok: true }
   },
@@ -201,14 +245,64 @@ export const forfeitDisconnectedPlayer = internalMutation({
       return { ok: true }
     }
 
+    const state = loadGameState(game)
+    const resolvedClock = resolveTimedGameClock(game, state.currentPlayer, timestamp)
     await ctx.db.patch(
       game._id,
-      buildForfeitGamePatch(requirePlayerRole(participant.role), timestamp),
+      {
+        ...buildForfeitGamePatch(requirePlayerRole(participant.role), timestamp),
+        ...buildResolvedClockPatch(resolvedClock, null, timestamp),
+      },
     )
     await ctx.db.patch(participant._id, {
       disconnectDeadlineAt: undefined,
       disconnectForfeitJobId: undefined,
     })
+
+    if (normalizeGameTimeControl(game) !== 'unlimited') {
+      await refreshClockTimeout(ctx, game, null)
+    }
+
+    return { ok: true }
+  },
+})
+
+export const timeoutActivePlayer = internalMutation({
+  args: {
+    gameId: v.id('games'),
+    generation: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get(args.gameId)
+    if (!game || game.status !== 'active') {
+      return { ok: true }
+    }
+    if (normalizeGameTimeControl(game) === 'unlimited') {
+      return { ok: true }
+    }
+    if ((game.clockTimeoutGeneration ?? 0) !== args.generation) {
+      return { ok: true }
+    }
+
+    const timestamp = now()
+    const state = loadGameState(game)
+    const resolvedClock = resolveTimedGameClock(game, state.currentPlayer, timestamp)
+
+    if (!resolvedClock || resolvedClock.activePlayer === null) {
+      return { ok: true }
+    }
+    if (resolvedClock.remainingMs[resolvedClock.activePlayer] > 0) {
+      return { ok: true }
+    }
+
+    await ctx.db.patch(
+      game._id,
+      buildTimeoutGamePatch(
+        resolvedClock.activePlayer,
+        timestamp,
+        resolvedClock.remainingMs,
+      ),
+    )
 
     return { ok: true }
   },
@@ -239,6 +333,8 @@ export const offerDraw = mutation({
 
     const slot = requirePlayerRole(participant.role)
     const state = loadGameState(game)
+    const timestamp = now()
+    await ensureGameHasTimeRemaining(ctx, game, state.currentPlayer, timestamp)
     const minMoveIndex =
       slot === 'one'
         ? game.nextDrawOfferMoveIndexPlayerOne ?? 0
@@ -254,8 +350,12 @@ export const offerDraw = mutation({
     await ctx.db.patch(game._id, {
       drawOfferedBy: slot,
       drawOfferedAtMoveIndex: state.totalMoves,
-      updatedAt: now(),
+      updatedAt: timestamp,
     })
+
+    if (normalizeGameTimeControl(game) !== 'unlimited') {
+      await refreshClockTimeout(ctx, game, null)
+    }
 
     return { ok: true }
   },
@@ -290,12 +390,20 @@ export const acceptDraw = mutation({
     }
 
     const timestamp = now()
+    const state = loadGameState(game)
+    const resolvedClock = await ensureGameHasTimeRemaining(
+      ctx,
+      game,
+      state.currentPlayer,
+      timestamp,
+    )
     await ctx.db.patch(game._id, {
       winnerSlot: undefined,
       finishReason: 'drawAgreement',
       status: 'finished',
       finishedAt: timestamp,
       updatedAt: timestamp,
+      ...buildResolvedClockPatch(resolvedClock, null, timestamp),
       ...clearDrawOfferFields(),
     })
 
@@ -332,8 +440,10 @@ export const declineDraw = mutation({
     }
 
     const state = loadGameState(game)
+    const timestamp = now()
+    await ensureGameHasTimeRemaining(ctx, game, state.currentPlayer, timestamp)
     await ctx.db.patch(game._id, {
-      updatedAt: now(),
+      updatedAt: timestamp,
       ...clearDrawOfferFields(),
       ...drawOfferCooldownPatch(game.drawOfferedBy, state.totalMoves),
     })
@@ -371,6 +481,7 @@ export const requestRematch = mutation({
     const requestedByPlayerTwo =
       game.rematchRequestedByPlayerTwo || !isPlayerOne
     const timestamp = now()
+    const initialClockMs = getInitialClockMs(normalizeGameTimeControl(game))
 
     if (!requestedByPlayerOne || !requestedByPlayerTwo) {
       await ctx.db.patch(game._id, {
@@ -391,10 +502,14 @@ export const requestRematch = mutation({
     const nextGameId = await ctx.db.insert('games', {
       mode: game.mode,
       status: 'active',
+      timeControl: normalizeGameTimeControl(game),
       roomCode: game.mode === 'private' ? game.roomCode : undefined,
       createdByGuestId: game.createdByGuestId,
       playerOneGuestId: game.playerTwoGuestId,
       playerTwoGuestId: game.playerOneGuestId,
+      playerOneTimeRemainingMs: initialClockMs ?? undefined,
+      playerTwoTimeRemainingMs: initialClockMs ?? undefined,
+      turnStartedAt: initialClockMs === null ? undefined : timestamp,
       serializedState: createStoredInitialState(),
       startedAt: timestamp,
       updatedAt: timestamp,
@@ -442,6 +557,30 @@ export const requestRematch = mutation({
 
     await refreshDisconnectForfeit(ctx, nextGameId, playerOneParticipant, timestamp)
     await refreshDisconnectForfeit(ctx, nextGameId, playerTwoParticipant, timestamp)
+
+    if (initialClockMs !== null) {
+      const nextClock = resolveTimedGameClock(
+        {
+          ...game,
+          status: 'active',
+          timeControl: normalizeGameTimeControl(game),
+          playerOneTimeRemainingMs: initialClockMs,
+          playerTwoTimeRemainingMs: initialClockMs,
+          turnStartedAt: timestamp,
+        },
+        'one',
+        timestamp,
+      )
+      await refreshClockTimeout(
+        ctx,
+        {
+          _id: nextGameId,
+          clockTimeoutGeneration: undefined,
+          clockTimeoutJobId: undefined,
+        },
+        nextClock,
+      )
+    }
 
     if (game.mode === 'private') {
       const participants = await listParticipants(ctx.db, game._id)
@@ -498,3 +637,31 @@ export const cancelRematch = mutation({
     return { ok: true }
   },
 })
+
+async function ensureGameHasTimeRemaining(
+  ctx: MutationCtx,
+  game: GameDoc,
+  currentPlayer: 'one' | 'two',
+  timestamp: number,
+) {
+  const resolvedClock = resolveTimedGameClock(game, currentPlayer, timestamp)
+
+  if (
+    resolvedClock &&
+    resolvedClock.activePlayer !== null &&
+    resolvedClock.remainingMs[resolvedClock.activePlayer] <= 0
+  ) {
+    await ctx.db.patch(
+      game._id,
+      buildTimeoutGamePatch(
+        resolvedClock.activePlayer,
+        timestamp,
+        resolvedClock.remainingMs,
+      ),
+    )
+    await refreshClockTimeout(ctx, game, null)
+    throwGameError('GAME_FINISHED', 'This game ended on time.')
+  }
+
+  return resolvedClock
+}

@@ -2,7 +2,7 @@
 
 Real-time multiplayer hexagonal tic-tac-toe built with TanStack Start, React 19, Tailwind CSS v4, and Convex.
 
-The app supports anonymous guest play, public matchmaking, private rooms, spectators, rematches, draw offers, and disconnect-aware presence.
+The app supports anonymous guest play, public matchmaking, private rooms, spectators, rematches, draw offers, chess-style room clocks, and disconnect-aware presence.
 
 ## Game Rules
 
@@ -16,14 +16,16 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 
 - No account required. Guests are created only when a user starts or joins a game and are then persisted in `localStorage`.
 - Public matchmaking with queue status and cancellation.
-- Private rooms with shareable 6-character room codes.
+- Private rooms with shareable 6-character room codes and optional time controls.
 - Direct join links at `/join/<ROOM_CODE>`.
 - Spectator support for full private rooms.
 - Resume flow for the latest active game tied to the current guest.
 - Real-time board state, move history, turn state, and participant presence through Convex.
+- Chess-style clocks for timed private rooms.
 - Pannable, zoomable infinite hex board.
 - Draw offers with cooldown enforcement.
 - Manual forfeits and automatic disconnect forfeits.
+- Timeout losses when a player runs out of room clock time.
 - Rematches that create a linked follow-up game and swap the opener.
 - Private-room rematches that carry spectators forward.
 
@@ -31,10 +33,12 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 
 - A guest can only be an active player in one game at a time.
 - Private rooms start in `waiting` and become `active` when the second player joins.
+- Matchmaking games always use unlimited time.
+- Timed private-room clocks start only when the second player joins.
 - The room creator is not guaranteed to open as Player 1.
 - Joining a full private room makes the guest a spectator.
 - Finished private rooms do not accept new spectators.
-- Games can end by line completion, forfeit, or draw agreement.
+- Games can end by line completion, forfeit, timeout, or draw agreement.
 - The client sends a presence heartbeat every 10 seconds while the tab is visible.
 - A disconnected active player forfeits after 90 seconds away.
 

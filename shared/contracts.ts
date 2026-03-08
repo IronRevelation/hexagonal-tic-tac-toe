@@ -1,9 +1,10 @@
 import type { HexCoord, PlayerSlot, SerializedGameState } from './hexGame'
+import type { TimeControlPreset, TimedTimeControlPreset } from './timeControl'
 
 export type GameMode = 'matchmaking' | 'private'
 export type GameStatus = 'waiting' | 'active' | 'finished'
 export type ParticipantRole = 'playerOne' | 'playerTwo' | 'spectator'
-export type GameFinishReason = 'line' | 'forfeit' | 'drawAgreement'
+export type GameFinishReason = 'line' | 'forfeit' | 'drawAgreement' | 'timeout'
 
 export type GuestSession = {
   displayName: string
@@ -30,11 +31,20 @@ export type PlayerPresence = {
   isOnline: boolean
 }
 
+export type GameClockSnapshot = {
+  preset: TimedTimeControlPreset
+  initialTimeMs: number
+  remainingMs: Record<PlayerSlot, number>
+  activePlayer: PlayerSlot | null
+  serverNow: number
+}
+
 export type GameSnapshot = {
   gameId: string
   mode: GameMode
   status: GameStatus
   finishReason: GameFinishReason | null
+  timeControl: TimeControlPreset
   winnerSlot: PlayerSlot | null
   roomCode: string | null
   seriesId: string | null
@@ -46,6 +56,7 @@ export type GameSnapshot = {
   players: Record<PlayerSlot, PlayerPresence | null>
   spectatorCount: number
   canDeleteRoom: boolean
+  clock: GameClockSnapshot | null
   rematch: RematchState
   drawOffer: DrawOfferState
   updatedAt: number
@@ -132,6 +143,7 @@ export type PrivacyExport = {
     id: string
     mode: GameMode
     status: GameStatus
+    timeControl: TimeControlPreset
     roomCode: string | null
     createdAt: number | null
     startedAt: number | null

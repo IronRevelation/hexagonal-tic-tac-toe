@@ -15,6 +15,7 @@ import {
 } from '../shared/hexGame'
 import type {
   DrawOfferState,
+  GameClockSnapshot,
   GameFinishReason,
   GameMode,
   GameSnapshot,
@@ -23,6 +24,11 @@ import type {
   ParticipantRole,
   PlayerPresence,
 } from '../shared/contracts'
+import {
+  getInitialClockMs,
+  type TimeControlPreset,
+  type TimedTimeControlPreset,
+} from '../shared/timeControl'
 
 const ADJECTIVES = [
   'Amber',
@@ -77,6 +83,7 @@ export type ParticipantDoc = Doc<'gameParticipants'>
 export type PlayerParticipantDoc = ParticipantDoc & {
   role: 'playerOne' | 'playerTwo'
 }
+export type ResolvedTimedClock = GameClockSnapshot
 
 export function now() {
   return Date.now()
@@ -329,6 +336,71 @@ export function isOnline(lastSeenAt: number) {
   return now() - lastSeenAt < ONLINE_WINDOW_MS
 }
 
+export function normalizeGameTimeControl(game: Pick<GameDoc, 'timeControl'>): TimeControlPreset {
+  return game.timeControl ?? 'unlimited'
+}
+
+export function resolveTimedGameClock(
+  game: Pick<
+    GameDoc,
+    | 'status'
+    | 'timeControl'
+    | 'playerOneTimeRemainingMs'
+    | 'playerTwoTimeRemainingMs'
+    | 'turnStartedAt'
+  >,
+  currentPlayer: PlayerSlot,
+  timestamp: number,
+): ResolvedTimedClock | null {
+  const timeControl = normalizeGameTimeControl(game)
+  const initialTimeMs = getInitialClockMs(timeControl)
+
+  if (initialTimeMs === null) {
+    return null
+  }
+
+  const activePlayer = game.status === 'active' ? currentPlayer : null
+  const elapsedMs =
+    activePlayer !== null && game.turnStartedAt !== undefined
+      ? Math.max(0, timestamp - game.turnStartedAt)
+      : 0
+
+  const remainingMs = {
+    one:
+      activePlayer === 'one'
+        ? Math.max(0, (game.playerOneTimeRemainingMs ?? initialTimeMs) - elapsedMs)
+        : game.playerOneTimeRemainingMs ?? initialTimeMs,
+    two:
+      activePlayer === 'two'
+        ? Math.max(0, (game.playerTwoTimeRemainingMs ?? initialTimeMs) - elapsedMs)
+        : game.playerTwoTimeRemainingMs ?? initialTimeMs,
+  } satisfies Record<PlayerSlot, number>
+
+  return {
+    preset: timeControl as TimedTimeControlPreset,
+    initialTimeMs,
+    remainingMs,
+    activePlayer,
+    serverNow: timestamp,
+  }
+}
+
+export function buildResolvedClockPatch(
+  clock: ResolvedTimedClock | null,
+  nextActivePlayer: PlayerSlot | null,
+  timestamp: number,
+) {
+  if (!clock) {
+    return {}
+  }
+
+  return {
+    playerOneTimeRemainingMs: clock.remainingMs.one,
+    playerTwoTimeRemainingMs: clock.remainingMs.two,
+    turnStartedAt: nextActivePlayer ? timestamp : undefined,
+  }
+}
+
 export function buildForfeitGamePatch(slot: PlayerSlot, timestamp: number) {
   return {
     winnerSlot: opponentOf(slot),
@@ -336,6 +408,25 @@ export function buildForfeitGamePatch(slot: PlayerSlot, timestamp: number) {
     status: 'finished' as const,
     finishedAt: timestamp,
     updatedAt: timestamp,
+    ...clearDrawOfferFields(),
+  }
+}
+
+export function buildTimeoutGamePatch(
+  slot: PlayerSlot,
+  timestamp: number,
+  remainingMs: Record<PlayerSlot, number>,
+) {
+  return {
+    winnerSlot: opponentOf(slot),
+    finishReason: 'timeout' as const,
+    status: 'finished' as const,
+    finishedAt: timestamp,
+    updatedAt: timestamp,
+    playerOneTimeRemainingMs: remainingMs.one,
+    playerTwoTimeRemainingMs: remainingMs.two,
+    turnStartedAt: undefined,
+    clockTimeoutJobId: undefined,
     ...clearDrawOfferFields(),
   }
 }
@@ -356,6 +447,45 @@ export function drawOfferCooldownPatch(
   return slot === 'one'
     ? { nextDrawOfferMoveIndexPlayerOne: nextMoveIndex }
     : { nextDrawOfferMoveIndexPlayerTwo: nextMoveIndex }
+}
+
+export async function refreshClockTimeout(
+  ctx: MutationCtx,
+  game: Pick<GameDoc, '_id' | 'clockTimeoutGeneration' | 'clockTimeoutJobId'>,
+  clock: ResolvedTimedClock | null,
+) {
+  const nextGeneration = (game.clockTimeoutGeneration ?? 0) + 1
+
+  if (game.clockTimeoutJobId) {
+    try {
+      await ctx.scheduler.cancel(game.clockTimeoutJobId)
+    } catch {
+      // The previous timeout may already have completed or been canceled.
+    }
+  }
+
+  if (!clock || clock.activePlayer === null) {
+    await ctx.db.patch(game._id, {
+      clockTimeoutGeneration: nextGeneration,
+      clockTimeoutJobId: undefined,
+    })
+    return
+  }
+
+  const timeoutDelayMs = clock.remainingMs[clock.activePlayer]
+  const clockTimeoutJobId = await ctx.scheduler.runAfter(
+    timeoutDelayMs,
+    internal.games.timeoutActivePlayer,
+    {
+      gameId: game._id,
+      generation: nextGeneration,
+    },
+  )
+
+  await ctx.db.patch(game._id, {
+    clockTimeoutGeneration: nextGeneration,
+    clockTimeoutJobId,
+  })
 }
 
 export async function refreshDisconnectForfeit(
@@ -454,7 +584,9 @@ export async function buildGameSnapshot(
   const playerTwo = playerTwoParticipant
     ? await buildPlayerPresence(db, playerTwoParticipant)
     : null
+  const snapshotTime = now()
   const state = fromStoredState(game.serializedState)
+  const clock = resolveTimedGameClock(game, state.currentPlayer, snapshotTime)
   const viewerCanMove =
     game.status === 'active' &&
     ((viewer.role === 'playerOne' && state.currentPlayer === 'one') ||
@@ -465,6 +597,7 @@ export async function buildGameSnapshot(
     mode: game.mode as GameMode,
     status: game.status as GameStatus,
     finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
+    timeControl: normalizeGameTimeControl(game),
     winnerSlot: game.winnerSlot ?? null,
     roomCode: game.roomCode ?? null,
     seriesId: game.seriesId ?? null,
@@ -479,6 +612,7 @@ export async function buildGameSnapshot(
     },
     spectatorCount,
     canDeleteRoom: canDeletePrivateRoom(game, participants, guest._id),
+    clock,
     rematch: {
       requestedByPlayerOne: game.rematchRequestedByPlayerOne,
       requestedByPlayerTwo: game.rematchRequestedByPlayerTwo,

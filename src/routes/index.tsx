@@ -5,11 +5,15 @@ import { api } from '../../convex/_generated/api'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
 import {
+  cn,
   displayTitle,
   errorPanel,
   fieldLabel,
   guestChip,
   infoCard,
+  modalKicker,
+  modalOverlay,
+  modalPanel,
   mutedCopy,
   pageWrap,
   primaryButton,
@@ -18,6 +22,7 @@ import {
   textInput,
 } from '../lib/ui'
 import { useVisibleHeartbeat } from '../lib/useVisibleHeartbeat'
+import { TIME_CONTROL_PRESETS, type TimeControlPreset } from '../../shared/timeControl'
 
 export const Route = createFileRoute('/')({
   component: LobbyPage,
@@ -30,6 +35,9 @@ function LobbyPage() {
   const [roomCode, setRoomCode] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [isTimeControlModalOpen, setIsTimeControlModalOpen] = useState(false)
+  const [selectedTimeControl, setSelectedTimeControl] =
+    useState<TimeControlPreset>('unlimited')
   const previousMatchState = useRef<'idle' | 'queued' | 'matched'>('idle')
   const joinMatchmaking = useMutation(api.matchmaking.join)
   const cancelMatchmaking = useMutation(api.matchmaking.cancel)
@@ -107,13 +115,17 @@ function LobbyPage() {
     }
   }
 
-  async function handleCreatePrivateGame() {
+  async function handleCreatePrivateGame(timeControl: TimeControlPreset) {
     setPendingAction('private')
     setActionError(null)
 
     try {
       const activeGuestToken = guestToken ?? (await ensureGuestSession())
-      const result = await createPrivateGame({ guestToken: activeGuestToken })
+      const result = await createPrivateGame({
+        guestToken: activeGuestToken,
+        timeControl,
+      })
+      setIsTimeControlModalOpen(false)
       await navigate({
         to: '/games/$gameId',
         params: { gameId: result.gameId },
@@ -137,6 +149,11 @@ function LobbyPage() {
       to: '/join/$roomCode',
       params: { roomCode: roomCode.trim().toUpperCase() },
     })
+  }
+
+  function openTimeControlModal() {
+    setSelectedTimeControl('unlimited')
+    setIsTimeControlModalOpen(true)
   }
 
   return (
@@ -220,7 +237,7 @@ function LobbyPage() {
           <button
             className={`${secondaryButton} max-[720px]:w-full`}
             disabled={pendingAction !== null || !canCreatePrivateRoom}
-            onClick={() => void handleCreatePrivateGame()}
+            onClick={() => openTimeControlModal()}
             type="button"
           >
             {pendingAction === 'private' ? 'Creating…' : 'Create private room'}
@@ -276,6 +293,92 @@ function LobbyPage() {
           ) : null}
         </div>
       </section>
+
+      {isTimeControlModalOpen ? (
+        <div className={modalOverlay} role="presentation">
+          <section
+            aria-labelledby="time-control-title"
+            aria-modal="true"
+            className={`${modalPanel} w-[min(100%,26rem)] gap-4 p-6 text-left max-[720px]:p-5`}
+            role="dialog"
+          >
+            <div className="grid gap-2 text-center">
+              <p className={modalKicker}>Private room</p>
+              <h2 id="time-control-title" className="m-0 text-[1.8rem] leading-[1.05]">
+                Choose a time control
+              </h2>
+              <p className="m-0 text-[0.96rem] leading-[1.55] text-[var(--sea-ink-soft)]">
+                Matchmaking stays unlimited. Room clocks start when the second
+                player joins.
+              </p>
+            </div>
+            <div className="rounded-[1.15rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_88%,white_12%)] px-4 py-3 text-[0.82rem] leading-[1.5] text-[var(--sea-ink-soft)]">
+              Selected:{' '}
+              <strong className="font-semibold text-[var(--sea-ink)]">
+                {TIME_CONTROL_PRESETS.find((preset) => preset.value === selectedTimeControl)?.label}
+              </strong>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-left">
+              {TIME_CONTROL_PRESETS.map((preset) => {
+                const isSelected = preset.value === selectedTimeControl
+                const isWide = preset.value === 'unlimited'
+
+                return (
+                  <button
+                    key={preset.value}
+                    className={cn(
+                      'relative grid min-h-[5.2rem] content-between rounded-[1.15rem] border px-4 py-3 text-left transition-[background-color,color,border-color,transform,box-shadow] duration-[180ms]',
+                      isWide && 'col-span-2',
+                      isSelected
+                        ? 'border-[color-mix(in_oklab,var(--amber)_40%,var(--lagoon))] bg-[linear-gradient(155deg,color-mix(in_oklab,var(--surface-strong)_78%,white_22%),color-mix(in_oklab,var(--surface)_88%,var(--amber)_12%))] text-[var(--sea-ink)] shadow-[0_14px_30px_rgba(15,24,32,0.14)]'
+                        : 'border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_90%,white_10%)] text-[var(--sea-ink-soft)] hover:border-[color-mix(in_oklab,var(--lagoon)_26%,var(--line))] hover:bg-[color-mix(in_oklab,var(--surface-strong)_88%,white_12%)]',
+                    )}
+                    onClick={() => setSelectedTimeControl(preset.value)}
+                    type="button"
+                  >
+                    <span
+                      className={cn(
+                        'absolute right-3 top-3 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1 text-[0.66rem] font-bold uppercase tracking-[0.08em]',
+                        isSelected
+                          ? 'border-transparent bg-[linear-gradient(135deg,var(--amber),color-mix(in_oklab,var(--amber)_70%,white))] text-[#0f1820]'
+                          : 'border-[var(--line)] text-[var(--sea-ink-soft)]',
+                      )}
+                    >
+                      {isSelected ? 'On' : 'Off'}
+                    </span>
+                    <div className="grid gap-[0.18rem] pr-9">
+                      <strong className="text-[1rem] text-[var(--sea-ink)]">
+                        {preset.label}
+                      </strong>
+                      <span className="text-[0.8rem] leading-[1.35]">
+                        {preset.description}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-1 max-[720px]:grid max-[720px]:grid-cols-2">
+              <button
+                className={secondaryButton}
+                disabled={pendingAction === 'private'}
+                onClick={() => setIsTimeControlModalOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className={primaryButton}
+                disabled={pendingAction === 'private'}
+                onClick={() => void handleCreatePrivateGame(selectedTimeControl)}
+                type="button"
+              >
+                {pendingAction === 'private' ? 'Creating…' : 'Create room'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {error || actionError ? (
         <section className={`${surfacePanel} ${errorPanel}`}>

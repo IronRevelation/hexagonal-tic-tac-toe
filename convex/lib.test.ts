@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildResolvedClockPatch,
   buildForfeitGamePatch,
+  buildTimeoutGamePatch,
   canCreatePrivateRoom,
   canDeletePrivateRoom,
   clearDrawOfferFields,
@@ -9,6 +11,8 @@ import {
   DRAW_OFFER_COOLDOWN_MOVES,
   findAvailableMatchmakingOpponent,
   isValidGuestToken,
+  normalizeGameTimeControl,
+  resolveTimedGameClock,
 } from './lib'
 
 describe('draw offer helpers', () => {
@@ -38,6 +42,27 @@ describe('draw offer helpers', () => {
       status: 'finished',
       finishedAt: DISCONNECT_FORFEIT_MS,
       updatedAt: DISCONNECT_FORFEIT_MS,
+      drawOfferedBy: undefined,
+      drawOfferedAtMoveIndex: undefined,
+    })
+  })
+
+  it('builds the standard timeout patch', () => {
+    expect(
+      buildTimeoutGamePatch('two', DISCONNECT_FORFEIT_MS, {
+        one: 45_000,
+        two: 0,
+      }),
+    ).toEqual({
+      winnerSlot: 'one',
+      finishReason: 'timeout',
+      status: 'finished',
+      finishedAt: DISCONNECT_FORFEIT_MS,
+      updatedAt: DISCONNECT_FORFEIT_MS,
+      playerOneTimeRemainingMs: 45_000,
+      playerTwoTimeRemainingMs: 0,
+      turnStartedAt: undefined,
+      clockTimeoutJobId: undefined,
       drawOfferedBy: undefined,
       drawOfferedAtMoveIndex: undefined,
     })
@@ -90,6 +115,62 @@ describe('draw offer helpers', () => {
   it('blocks private room creation while queued for matchmaking', () => {
     expect(canCreatePrivateRoom(false)).toBe(true)
     expect(canCreatePrivateRoom(true)).toBe(false)
+  })
+
+  it('only depletes the active player clock', () => {
+    const resolvedClock = resolveTimedGameClock(
+      {
+        status: 'active',
+        timeControl: '3m',
+        playerOneTimeRemainingMs: 180_000,
+        playerTwoTimeRemainingMs: 180_000,
+        turnStartedAt: 1_000,
+      } as never,
+      'one',
+      31_000,
+    )
+
+    expect(resolvedClock?.remainingMs).toEqual({
+      one: 150_000,
+      two: 180_000,
+    })
+    expect(resolvedClock?.activePlayer).toBe('one')
+  })
+
+  it('persists the same active player clock after the first placement of a two-move turn', () => {
+    const resolvedClock = resolveTimedGameClock(
+      {
+        status: 'active',
+        timeControl: '5m',
+        playerOneTimeRemainingMs: 300_000,
+        playerTwoTimeRemainingMs: 300_000,
+        turnStartedAt: 10_000,
+      } as never,
+      'two',
+      14_000,
+    )
+
+    expect(buildResolvedClockPatch(resolvedClock, 'two', 14_000)).toEqual({
+      playerOneTimeRemainingMs: 300_000,
+      playerTwoTimeRemainingMs: 296_000,
+      turnStartedAt: 14_000,
+    })
+  })
+
+  it('treats legacy games without a time control as unlimited', () => {
+    expect(normalizeGameTimeControl({} as never)).toBe('unlimited')
+    expect(
+      resolveTimedGameClock(
+        {
+          status: 'active',
+          playerOneTimeRemainingMs: undefined,
+          playerTwoTimeRemainingMs: undefined,
+          turnStartedAt: 0,
+        } as never,
+        'one',
+        1_000,
+      ),
+    ).toBeNull()
   })
 
   it('accepts UUID guest tokens and rejects arbitrary strings', () => {

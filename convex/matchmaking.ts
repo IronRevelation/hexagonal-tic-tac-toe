@@ -79,6 +79,7 @@ export const join = mutation({
     const gameId = await ctx.db.insert('games', {
       mode: 'matchmaking',
       status: 'active',
+      timeControl: 'unlimited',
       createdByGuestId: availableOpponent.guestId,
       playerOneGuestId: openingOrder.playerOneGuestId,
       playerTwoGuestId: openingOrder.playerTwoGuestId,

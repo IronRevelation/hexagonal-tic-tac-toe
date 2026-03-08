@@ -3,6 +3,13 @@ import { v } from 'convex/values'
 
 const playerSlot = v.union(v.literal('one'), v.literal('two'))
 const gameMode = v.union(v.literal('matchmaking'), v.literal('private'))
+const timeControlPreset = v.union(
+  v.literal('unlimited'),
+  v.literal('1m'),
+  v.literal('3m'),
+  v.literal('5m'),
+  v.literal('10m'),
+)
 const gameStatus = v.union(
   v.literal('waiting'),
   v.literal('active'),
@@ -12,6 +19,7 @@ const gameFinishReason = v.union(
   v.literal('line'),
   v.literal('forfeit'),
   v.literal('drawAgreement'),
+  v.literal('timeout'),
 )
 const participantRole = v.union(
   v.literal('playerOne'),
@@ -55,10 +63,16 @@ export default defineSchema({
   games: defineTable({
     mode: gameMode,
     status: gameStatus,
+    timeControl: v.optional(timeControlPreset),
     roomCode: v.optional(v.string()),
     createdByGuestId: v.id('guests'),
     playerOneGuestId: v.optional(v.id('guests')),
     playerTwoGuestId: v.optional(v.id('guests')),
+    playerOneTimeRemainingMs: v.optional(v.number()),
+    playerTwoTimeRemainingMs: v.optional(v.number()),
+    turnStartedAt: v.optional(v.number()),
+    clockTimeoutGeneration: v.optional(v.number()),
+    clockTimeoutJobId: v.optional(v.id('_scheduled_functions')),
     serializedState: storedGameState,
     winnerSlot: v.optional(playerSlot),
     finishReason: v.optional(gameFinishReason),

@@ -709,7 +709,7 @@ export const requestRematch = mutation({
       playerTwoGuestId: game.playerOneGuestId,
       playerOneTimeRemainingMs: initialClockMs ?? undefined,
       playerTwoTimeRemainingMs: initialClockMs ?? undefined,
-      turnStartedAt: initialClockMs === null ? undefined : timestamp,
+      turnStartedAt: undefined,
       serializedState: createStoredInitialState(),
       startedAt: timestamp,
       updatedAt: timestamp,
@@ -757,30 +757,6 @@ export const requestRematch = mutation({
 
     await refreshDisconnectForfeit(ctx, nextGameId, playerOneParticipant, timestamp)
     await refreshDisconnectForfeit(ctx, nextGameId, playerTwoParticipant, timestamp)
-
-    if (initialClockMs !== null) {
-      const nextClock = resolveTimedGameClock(
-        {
-          ...game,
-          status: 'active',
-          timeControl: normalizeGameTimeControl(game),
-          playerOneTimeRemainingMs: initialClockMs,
-          playerTwoTimeRemainingMs: initialClockMs,
-          turnStartedAt: timestamp,
-        },
-        'one',
-        timestamp,
-      )
-      await refreshClockTimeout(
-        ctx,
-        {
-          _id: nextGameId,
-          clockTimeoutGeneration: undefined,
-          clockTimeoutJobId: undefined,
-        },
-        nextClock,
-      )
-    }
 
     if (game.mode === 'private') {
       const participants = await listParticipants(ctx.db, game._id)

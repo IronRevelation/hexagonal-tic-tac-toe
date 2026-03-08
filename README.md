@@ -34,7 +34,7 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 - A guest can only be an active player in one game at a time.
 - Private rooms start in `waiting` and become `active` when the second player joins.
 - Matchmaking games always use unlimited time.
-- Timed private-room clocks start only when the second player joins.
+- Timed private-room clocks start only after the first move is made.
 - The room creator is not guaranteed to open as Player 1.
 - Joining a full private room makes the guest a spectator.
 - Finished private rooms do not accept new spectators.

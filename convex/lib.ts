@@ -396,7 +396,8 @@ export function resolveTimedGameClock(
     return null
   }
 
-  const activePlayer = game.status === 'active' ? currentPlayer : null
+  const activePlayer =
+    game.status === 'active' && game.turnStartedAt !== undefined ? currentPlayer : null
   const elapsedMs =
     activePlayer !== null && game.turnStartedAt !== undefined
       ? Math.max(0, timestamp - game.turnStartedAt)

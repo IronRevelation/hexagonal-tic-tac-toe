@@ -142,6 +142,26 @@ describe('draw offer helpers', () => {
     expect(resolvedClock?.activePlayer).toBe('one')
   })
 
+  it('keeps timed games paused until the first move starts the turn clock', () => {
+    const resolvedClock = resolveTimedGameClock(
+      {
+        status: 'active',
+        timeControl: '3m',
+        playerOneTimeRemainingMs: 180_000,
+        playerTwoTimeRemainingMs: 180_000,
+        turnStartedAt: undefined,
+      } as never,
+      'one',
+      31_000,
+    )
+
+    expect(resolvedClock?.remainingMs).toEqual({
+      one: 180_000,
+      two: 180_000,
+    })
+    expect(resolvedClock?.activePlayer).toBeNull()
+  })
+
   it('persists the same active player clock after the first placement of a two-move turn', () => {
     const resolvedClock = resolveTimedGameClock(
       {

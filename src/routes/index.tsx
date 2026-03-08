@@ -25,7 +25,8 @@ export const Route = createFileRoute('/')({
 
 function LobbyPage() {
   const navigate = useNavigate()
-  const { guestToken, session, isLoading, error } = useGuestSession()
+  const { guestToken, session, isLoading, error, ensureGuestSession } =
+    useGuestSession()
   const [roomCode, setRoomCode] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
@@ -66,15 +67,12 @@ function LobbyPage() {
   const canCreatePrivateRoom = !isQueued && !isAlreadyPlaying
 
   async function handleJoinMatchmaking() {
-    if (!guestToken) {
-      return
-    }
-
     setPendingAction('matchmaking')
     setActionError(null)
 
     try {
-      const result = await joinMatchmaking({ guestToken })
+      const activeGuestToken = guestToken ?? (await ensureGuestSession())
+      const result = await joinMatchmaking({ guestToken: activeGuestToken })
       if (result.state === 'matched') {
         await navigate({
           to: '/games/$gameId',
@@ -110,15 +108,12 @@ function LobbyPage() {
   }
 
   async function handleCreatePrivateGame() {
-    if (!guestToken) {
-      return
-    }
-
     setPendingAction('private')
     setActionError(null)
 
     try {
-      const result = await createPrivateGame({ guestToken })
+      const activeGuestToken = guestToken ?? (await ensureGuestSession())
+      const result = await createPrivateGame({ guestToken: activeGuestToken })
       await navigate({
         to: '/games/$gameId',
         params: { gameId: result.gameId },
@@ -162,7 +157,9 @@ function LobbyPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             <span className={guestChip}>
-              {isLoading ? 'Creating guest…' : session?.displayName ?? 'Offline guest'}
+              {isLoading
+                ? 'Loading guest…'
+                : session?.displayName ?? 'Guest created on first game'}
             </span>
             <Link className={secondaryButton} to="/about">
               Rules
@@ -255,6 +252,18 @@ function LobbyPage() {
               player slots are taken, you&apos;ll join as a spectator.
             </p>
           </form>
+
+          {!guestToken ? (
+            <p className={`${infoCard} ${mutedCopy} m-0`}>
+              Starting or joining a game creates an anonymous guest ID on this
+              device, stores a hashed copy on the backend, and records gameplay
+              and presence data through Convex and Vercel infrastructure. See{' '}
+              <Link className="font-semibold text-[var(--sea-ink)]" to="/privacy">
+                Privacy
+              </Link>{' '}
+              for retention, transfers, and deletion options.
+            </p>
+          ) : null}
 
           {isAlreadyPlaying ? (
             <p className={`${mutedCopy} mt-1 mb-0`}>

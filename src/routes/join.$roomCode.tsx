@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from 'convex/react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { api } from '../../convex/_generated/api'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
@@ -13,18 +13,19 @@ export const Route = createFileRoute('/join/$roomCode')({
 function JoinRoomPage() {
   const navigate = useNavigate()
   const { roomCode } = Route.useParams()
-  const { guestToken, isLoading } = useGuestSession()
+  const { guestToken, isLoading, ensureGuestSession } = useGuestSession()
   const joinRoom = useMutation(api.privateGames.join)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!guestToken || isLoading) {
+    if (isLoading) {
       return
     }
 
     let cancelled = false
 
-    joinRoom({ guestToken, roomCode })
+    Promise.resolve(guestToken ?? ensureGuestSession())
+      .then((activeGuestToken) => joinRoom({ guestToken: activeGuestToken, roomCode }))
       .then((result) => {
         if (!cancelled) {
           void navigate({
@@ -42,7 +43,7 @@ function JoinRoomPage() {
     return () => {
       cancelled = true
     }
-  }, [guestToken, isLoading, joinRoom, navigate, roomCode])
+  }, [ensureGuestSession, guestToken, isLoading, joinRoom, navigate, roomCode])
 
   return (
     <main className={`${pageWrap} px-4 py-16`}>
@@ -54,8 +55,19 @@ function JoinRoomPage() {
         <p className="m-0 leading-[1.6] text-[var(--sea-ink-soft)]">
           {error
             ? error
-            : 'Checking the room and attaching your guest identity to the match.'}
+            : 'Checking the room and attaching your anonymous guest identity to the match.'}
         </p>
+        {!guestToken ? (
+          <p className="m-0 text-sm leading-[1.6] text-[var(--sea-ink-soft)]">
+            Joining creates an anonymous guest ID on this device, stores a hashed
+            copy on the backend, and records gameplay and presence data through
+            Convex and Vercel infrastructure. See{' '}
+            <Link className="font-semibold text-[var(--sea-ink)]" to="/privacy">
+              Privacy
+            </Link>{' '}
+            for retention, transfers, and deletion options.
+          </p>
+        ) : null}
         {error ? (
           <button
             className={secondaryButton}

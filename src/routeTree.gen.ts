@@ -9,11 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as JoinRoomCodeRouteImport } from './routes/join.$roomCode'
 import { Route as GamesGameIdRouteImport } from './routes/games.$gameId'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -38,12 +50,16 @@ const GamesGameIdRoute = GamesGameIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/games/$gameId': typeof GamesGameIdRoute
   '/join/$roomCode': typeof JoinRoomCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/games/$gameId': typeof GamesGameIdRoute
   '/join/$roomCode': typeof JoinRoomCodeRoute
 }
@@ -51,26 +67,63 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/games/$gameId': typeof GamesGameIdRoute
   '/join/$roomCode': typeof JoinRoomCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/games/$gameId' | '/join/$roomCode'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/privacy'
+    | '/terms'
+    | '/games/$gameId'
+    | '/join/$roomCode'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/games/$gameId' | '/join/$roomCode'
-  id: '__root__' | '/' | '/about' | '/games/$gameId' | '/join/$roomCode'
+  to:
+    | '/'
+    | '/about'
+    | '/privacy'
+    | '/terms'
+    | '/games/$gameId'
+    | '/join/$roomCode'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/privacy'
+    | '/terms'
+    | '/games/$gameId'
+    | '/join/$roomCode'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   GamesGameIdRoute: typeof GamesGameIdRoute
   JoinRoomCodeRoute: typeof JoinRoomCodeRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -105,6 +158,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   GamesGameIdRoute: GamesGameIdRoute,
   JoinRoomCodeRoute: JoinRoomCodeRoute,
 }

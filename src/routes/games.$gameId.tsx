@@ -269,7 +269,7 @@ function GamePage() {
     }
   }
 
-  if (isGuestLoading || game === undefined) {
+  if (isGuestLoading || (guestToken !== null && game === undefined)) {
     return (
       <main className={`${pageWrap} px-4 py-16`}>
         <section
@@ -315,7 +315,7 @@ function GamePage() {
     (game.mode === 'private' &&
       waitingForOpponent &&
       game.viewerRole === 'playerOne' &&
-      game.playerTwoGuestId === null)
+      game.players.two === null)
   const viewerSlot =
     game.viewerRole === 'playerOne' ? 'one' : game.viewerRole === 'playerTwo' ? 'two' : null
   const opponentSlot =

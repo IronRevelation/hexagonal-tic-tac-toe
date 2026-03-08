@@ -64,6 +64,10 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ONLINE_WINDOW_MS = 45_000
 export const DISCONNECT_FORFEIT_MS = 90_000
 export const DRAW_OFFER_COOLDOWN_MOVES = 8
+export const MATCHMAKING_RETENTION_MS = 24 * 60 * 60 * 1000
+export const WAITING_PRIVATE_ROOM_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+export const FINISHED_GAME_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+export const GUEST_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const GUEST_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -106,38 +110,63 @@ export function loadGameState(game: GameDoc): GameState {
   return deserializeGameState(fromStoredState(game.serializedState))
 }
 
+export async function hashGuestToken(guestToken: string) {
+  assertValidGuestToken(guestToken)
+  const encoded = new TextEncoder().encode(guestToken)
+  const digest = await crypto.subtle.digest('SHA-256', encoded)
+  return Array.from(new Uint8Array(digest), (value) =>
+    value.toString(16).padStart(2, '0'),
+  ).join('')
+}
+
+export function getGuestRetentionExpiresAt(timestamp: number) {
+  return timestamp + GUEST_RETENTION_MS
+}
+
 export async function getGuestByToken(
   db: DatabaseReader | DatabaseWriter,
   guestToken: string,
 ) {
+  const guestTokenHash = await hashGuestToken(guestToken)
   return db
     .query('guests')
-    .withIndex('by_guestToken', (query) => query.eq('guestToken', guestToken))
+    .withIndex('by_guestTokenHash', (query) =>
+      query.eq('guestTokenHash', guestTokenHash),
+    )
     .unique()
 }
 
 export async function ensureGuest(
   ctx: MutationCtx,
   guestToken: string,
-) {
+): Promise<GuestDoc> {
   assertValidGuestToken(guestToken)
   const existing = await getGuestByToken(ctx.db, guestToken)
   const seenAt = now()
 
   if (existing) {
-    await ctx.db.patch(existing._id, { lastSeenAt: seenAt })
-    return {
+    await ctx.db.patch(existing._id, {
+      lastSeenAt: seenAt,
+      retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
+      state: 'active',
+    })
+    const refreshedGuest: GuestDoc = {
       ...existing,
       lastSeenAt: seenAt,
+      retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
+      state: 'active',
     }
+    return refreshedGuest
   }
 
   const displayName = createGuestName(guestToken)
   const guestId = await ctx.db.insert('guests', {
-    guestToken,
+    guestTokenHash: await hashGuestToken(guestToken),
     displayName,
+    state: 'active',
     createdAt: seenAt,
     lastSeenAt: seenAt,
+    retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
   })
 
   return (await ctx.db.get(guestId))!
@@ -147,9 +176,8 @@ export async function requireGuest(
   db: DatabaseReader | DatabaseWriter,
   guestToken: string,
 ) {
-  assertValidGuestToken(guestToken)
   const guest = await getGuestByToken(db, guestToken)
-  if (guest) {
+  if (guest?.state === 'active') {
     return guest
   }
 
@@ -170,6 +198,16 @@ export async function getParticipant(
       query.eq('gameId', gameId).eq('guestId', guestId),
     )
     .unique()
+}
+
+export async function listGuestParticipants(
+  db: DatabaseReader | DatabaseWriter,
+  guestId: Id<'guests'>,
+) {
+  return db
+    .query('gameParticipants')
+    .withIndex('by_guestId', (query) => query.eq('guestId', guestId))
+    .collect()
 }
 
 export async function listParticipants(
@@ -432,8 +470,6 @@ export async function buildGameSnapshot(
     seriesId: game.seriesId ?? null,
     previousGameId: game.previousGameId ?? null,
     nextGameId: game.nextGameId ?? null,
-    playerOneGuestId: game.playerOneGuestId ?? null,
-    playerTwoGuestId: game.playerTwoGuestId ?? null,
     viewerRole: viewer.role as ParticipantRole,
     viewerCanMove,
     state,
@@ -465,7 +501,6 @@ export async function buildGuestSession(
   const active = await findLatestAccessibleGameParticipant(db, guest._id)
 
   return {
-    guestToken: guest.guestToken,
     displayName: guest.displayName,
     activeGameId: active?.game._id ?? null,
     activeRole: (active?.participant.role as ParticipantRole | undefined) ?? null,
@@ -597,7 +632,6 @@ async function buildPlayerPresence(
   }
 
   return {
-    guestId: participant.guestId,
     displayName: guest.displayName,
     role: participant.role === 'playerTwo' ? 'playerTwo' : 'playerOne',
     isOnline: isOnline(participant.lastSeenAt),

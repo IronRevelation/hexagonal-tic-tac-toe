@@ -18,6 +18,7 @@ const participantRole = v.union(
   v.literal('playerTwo'),
   v.literal('spectator'),
 )
+const guestState = v.union(v.literal('active'), v.literal('erased'))
 
 const hexCoord = v.object({
   q: v.number(),
@@ -42,11 +43,14 @@ const storedGameState = v.object({
 
 export default defineSchema({
   guests: defineTable({
-    guestToken: v.string(),
+    guestTokenHash: v.optional(v.string()),
     displayName: v.string(),
+    state: guestState,
     createdAt: v.number(),
     lastSeenAt: v.number(),
-  }).index('by_guestToken', ['guestToken']),
+    erasedAt: v.optional(v.number()),
+    retentionExpiresAt: v.number(),
+  }).index('by_guestTokenHash', ['guestTokenHash']),
 
   games: defineTable({
     mode: gameMode,

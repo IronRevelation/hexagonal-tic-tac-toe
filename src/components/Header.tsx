@@ -57,7 +57,7 @@ export default function Header() {
 
         <div className="flex items-center justify-self-end gap-[0.8rem] max-[820px]:justify-self-stretch">
           <span className={guestChip}>
-            {session ? `Guest: ${session.displayName}` : 'Creating guest…'}
+            {session ? `Guest: ${session.displayName}` : 'Guest created on first game'}
           </span>
         </div>
       </nav>

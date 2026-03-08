@@ -14,8 +14,6 @@ import { GuestSessionProvider } from '../lib/GuestSessionProvider'
 
 import appCss from '../styles/app.css?url'
 
-const THEME_INIT_SCRIPT = `(function(){try{var root=document.documentElement;root.classList.remove('light');root.classList.add('dark');root.setAttribute('data-theme','dark');root.style.colorScheme='dark';window.localStorage.setItem('theme','dark')}catch(e){}})();`
-
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient
 }>()({
@@ -44,15 +42,8 @@ export const Route = createRootRouteWithContext<{
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className="dark"
-      data-theme="dark"
-      style={{ colorScheme: 'dark' }}
-    >
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body className="min-h-screen font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">

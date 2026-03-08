@@ -3,6 +3,7 @@ import { mutation, query } from './_generated/server'
 import {
   buildGuestSession,
   ensureGuest,
+  getGuestRetentionExpiresAt,
   getGuestByToken,
   getParticipant,
   isPlayerParticipant,
@@ -41,11 +42,16 @@ export const heartbeat = mutation({
     gameId: v.optional(v.id('games')),
   },
   handler: async (ctx, args) => {
-    const guest = await requireGuest(ctx.db, args.guestToken)
+    const guest = await getGuestByToken(ctx.db, args.guestToken)
+    if (!guest || guest.state !== 'active') {
+      return { ok: false, invalidSession: true as const }
+    }
+
     const seenAt = now()
 
     await ctx.db.patch(guest._id, {
       lastSeenAt: seenAt,
+      retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
     })
 
     if (args.gameId) {
@@ -62,7 +68,7 @@ export const heartbeat = mutation({
       }
     }
 
-    return { ok: true }
+    return { ok: true, invalidSession: false as const }
   },
 })
 

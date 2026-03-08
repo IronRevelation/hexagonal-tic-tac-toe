@@ -1,4 +1,5 @@
-import { useRouterState } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
+import { CONTACT_EMAIL } from '../../shared/legal'
 import { pageWrap } from '../lib/ui'
 
 export default function Footer() {
@@ -17,6 +18,20 @@ export default function Footer() {
         <div className="flex flex-col gap-2 text-sm md:flex-row md:items-center md:justify-between md:gap-6">
           <p className="m-0 font-medium text-[var(--sea-ink)]">
             &copy; {year} Hexagonal Tic-Tac-Toe Online
+          </p>
+          <p className="m-0 flex flex-wrap items-center gap-3 md:text-center">
+            <Link className="font-semibold text-[var(--sea-ink)] no-underline" to="/privacy">
+              Privacy
+            </Link>
+            <Link className="font-semibold text-[var(--sea-ink)] no-underline" to="/terms">
+              Terms
+            </Link>
+            <a
+              className="font-semibold text-[var(--sea-ink)] no-underline"
+              href={`mailto:${CONTACT_EMAIL}`}
+            >
+              {CONTACT_EMAIL}
+            </a>
           </p>
           <p className="m-0 md:text-center">
             Game invented by{' '}

@@ -14,7 +14,7 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 
 ## Features
 
-- No account required. Guests are created automatically and persisted in `localStorage`.
+- No account required. Guests are created only when a user starts or joins a game and are then persisted in `localStorage`.
 - Public matchmaking with queue status and cancellation.
 - Private rooms with shareable 6-character room codes.
 - Direct join links at `/join/<ROOM_CODE>`.
@@ -60,6 +60,8 @@ public/              Static assets
 
 - `/` lobby for matchmaking, room creation, resume, and join-by-code
 - `/about` game rules
+- `/privacy` privacy notice, export, and erasure tools
+- `/terms` service terms
 - `/join/:roomCode` room join handoff
 - `/games/:gameId` live game view
 

@@ -57,7 +57,6 @@ export default defineSchema({
     displayName: v.string(),
     state: guestState,
     createdAt: v.number(),
-    lastSeenAt: v.optional(v.number()),
     erasedAt: v.optional(v.number()),
     retentionExpiresAt: v.number(),
   }).index('by_guestTokenHash', ['guestTokenHash']),

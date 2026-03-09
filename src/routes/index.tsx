@@ -314,8 +314,9 @@ function LobbyPage() {
                 Choose a time control
               </h2>
               <p className="m-0 text-[0.96rem] leading-[1.55] text-[var(--sea-ink-soft)]">
-                Matchmaking stays unlimited and uses confirmed turns. Room clocks
-                start when the second player joins.
+                Matchmaking stays unlimited and uses confirmed turns. Private rooms
+                open in a lobby, and timed clocks begin with the first move after
+                the creator starts the game.
               </p>
             </div>
             <div className="rounded-[1.15rem] border border-[var(--line)] bg-[color-mix(in_oklab,var(--surface)_88%,white_12%)] px-4 py-3 text-[0.82rem] leading-[1.5] text-[var(--sea-ink-soft)]">

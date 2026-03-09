@@ -27,6 +27,8 @@ import type {
   GameStatus,
   GuestSession,
   ParticipantRole,
+  PrivateLobbyParticipant,
+  PrivateLobbySnapshot,
   PlayerPresence,
 } from '../shared/contracts'
 import {
@@ -634,6 +636,10 @@ export async function buildGameSnapshot(
   const playerTwo = playerTwoParticipant
     ? await buildPlayerPresence(db, playerTwoParticipant)
     : null
+  const privateLobby =
+    game.mode === 'private' && game.status === 'waiting'
+      ? await buildPrivateLobbySnapshot(db, game, participants, guest._id)
+      : null
   const snapshotTime = now()
   const state = fromStoredState(game.serializedState)
   const clock = resolveTimedGameClock(game, state.currentPlayer, snapshotTime)
@@ -662,6 +668,7 @@ export async function buildGameSnapshot(
       two: playerTwo,
     },
     spectatorCount,
+    privateLobby,
     canDeleteRoom: canDeletePrivateRoom(game, participants, guest._id),
     clock,
     rematch: {
@@ -832,6 +839,10 @@ export function throwGameError(
     | 'GAME_NOT_FOUND'
     | 'ROOM_FULL'
     | 'ROOM_DELETE_NOT_ALLOWED'
+    | 'PRIVATE_ROOM_LEAVE_NOT_ALLOWED'
+    | 'PRIVATE_ROOM_START_NOT_ALLOWED'
+    | 'PRIVATE_ROOM_SWAP_NOT_ALLOWED'
+    | 'PRIVATE_ROOM_OPPONENT_REQUIRED'
     | 'NOT_A_PLAYER'
     | 'NOT_YOUR_TURN'
     | 'CELL_OCCUPIED'
@@ -919,5 +930,60 @@ async function buildPlayerPresence(
   return {
     displayName: guest.displayName,
     role: participant.role === 'playerTwo' ? 'playerTwo' : 'playerOne',
+  }
+}
+
+async function buildPrivateLobbySnapshot(
+  db: DatabaseReader,
+  game: GameDoc,
+  participants: ParticipantDoc[],
+  viewerGuestId: Id<'guests'>,
+): Promise<PrivateLobbySnapshot> {
+  const creatorParticipant = participants.find(
+    (participant) => participant.guestId === game.createdByGuestId,
+  )
+
+  if (!creatorParticipant) {
+    throw new Error('Private room is missing its creator participant.')
+  }
+
+  const opponentParticipant =
+    participants.find((participant) => participant.role === 'playerTwo') ?? null
+  const spectatorParticipants = participants
+    .filter((participant) => participant.role === 'spectator')
+    .sort((left, right) => left.joinedAt - right.joinedAt)
+
+  const [creator, opponent, spectators] = await Promise.all([
+    buildPrivateLobbyParticipant(db, creatorParticipant),
+    opponentParticipant ? buildPrivateLobbyParticipant(db, opponentParticipant) : null,
+    Promise.all(
+      spectatorParticipants.map((participant) =>
+        buildPrivateLobbyParticipant(db, participant),
+      ),
+    ),
+  ])
+
+  return {
+    creator,
+    opponent,
+    spectators,
+    viewerIsCreator: game.createdByGuestId === viewerGuestId,
+    canStart: opponent !== null && game.createdByGuestId === viewerGuestId,
+  }
+}
+
+async function buildPrivateLobbyParticipant(
+  db: DatabaseReader,
+  participant: ParticipantDoc,
+): Promise<PrivateLobbyParticipant> {
+  const guest = await db.get(participant.guestId)
+
+  if (!guest) {
+    throw new Error(`Missing guest ${participant.guestId as GenericId<'guests'>}`)
+  }
+
+  return {
+    guestId: participant.guestId,
+    displayName: guest.displayName,
   }
 }

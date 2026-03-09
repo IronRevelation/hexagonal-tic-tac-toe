@@ -16,7 +16,7 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 
 - No account required. Guests are created only when a user starts or joins a game and are then persisted in `localStorage`.
 - Public matchmaking with queue status and cancellation.
-- Private rooms with shareable 6-character room codes and optional time controls.
+- Private rooms with shareable 6-character room codes, optional time controls, and a creator-controlled pre-start lobby.
 - Direct join links at `/join/<ROOM_CODE>`.
 - Spectator support for full private rooms.
 - Resume flow for the latest active game tied to the current guest.
@@ -32,11 +32,12 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 ## Important App Rules
 
 - A guest can only be an active player in one game at a time.
-- Private rooms start in `waiting` and become `active` when the second player joins.
+- Private rooms start in `waiting`, reserve the first joiner as opponent, and become `active` only when the creator starts the game.
 - Matchmaking games always use unlimited time.
 - Timed private-room clocks start only after the first move is made.
-- The room creator is not guaranteed to open as Player 1.
+- The room creator is not guaranteed to open as Player 1 once the game starts.
 - Joining a full private room makes the guest a spectator.
+- The creator can swap the reserved opponent with a spectator before the game starts.
 - Finished private rooms do not accept new spectators.
 - Games can end by line completion, forfeit, timeout, or draw agreement.
 - Active-player disconnect detection is tracked outside Convex to avoid database churn.

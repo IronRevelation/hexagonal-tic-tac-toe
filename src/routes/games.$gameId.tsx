@@ -8,7 +8,7 @@ import { PLAYER_LABELS, type HexCoord, type PlayerSlot } from '../../shared/hexG
 import HexBoard from '../components/HexBoard'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import { getConvexErrorMessage } from '../lib/convexError'
-import { asGameId } from '../lib/ids'
+import { asGameId, asGuestId } from '../lib/ids'
 import {
   getCanonicalTurnKey,
   getRequiredSelections,
@@ -51,6 +51,10 @@ function GamePage() {
   const [isConfirmingForfeit, setIsConfirmingForfeit] = useState(false)
   const [isDeletingRoom, setIsDeletingRoom] = useState(false)
   const [isConfirmingDeleteRoom, setIsConfirmingDeleteRoom] = useState(false)
+  const [isStartingPrivateGame, setIsStartingPrivateGame] = useState(false)
+  const [swappingOpponentGuestId, setSwappingOpponentGuestId] = useState<string | null>(
+    null,
+  )
   const [copiedShareLink, setCopiedShareLink] = useState(false)
   const [isLeavingGame, setIsLeavingGame] = useState(false)
   const [pendingCoords, setPendingCoords] = useState<HexCoord[]>([])
@@ -69,6 +73,9 @@ function GamePage() {
   const forfeitGame = useMutation(api.games.forfeitGame)
   const leaveFinishedGame = useMutation(api.guests.leaveFinishedGame)
   const deletePrivateRoom = useMutation(api.privateGames.remove)
+  const startPrivateGame = useMutation(api.privateGames.start)
+  const swapPrivateOpponent = useMutation(api.privateGames.swapOpponent)
+  const leavePrivateLobby = useMutation(api.privateGames.leaveLobby)
   const liveClock = useGameClock(game?.clock ?? null)
   const canonicalTurnKey = game ? getCanonicalTurnKey(game.gameId, game.state) : null
   useGamePresence(
@@ -350,6 +357,69 @@ function GamePage() {
     }
   }
 
+  async function handleLeavePrivateLobby() {
+    if (!guestToken || !game) {
+      void navigate({ to: '/' })
+      return
+    }
+
+    setIsLeavingGame(true)
+    setMoveError(null)
+
+    try {
+      await leavePrivateLobby({
+        guestToken,
+        gameId: asGameId(gameId),
+      })
+      await navigate({ to: '/' })
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to leave this private room.'))
+    } finally {
+      setIsLeavingGame(false)
+    }
+  }
+
+  async function handleStartPrivateGame() {
+    if (!guestToken || !game) {
+      return
+    }
+
+    setIsStartingPrivateGame(true)
+    setMoveError(null)
+
+    try {
+      await startPrivateGame({
+        guestToken,
+        gameId: asGameId(gameId),
+      })
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to start this private game.'))
+    } finally {
+      setIsStartingPrivateGame(false)
+    }
+  }
+
+  async function handleSwapPrivateOpponent(spectatorGuestId: string) {
+    if (!guestToken || !game) {
+      return
+    }
+
+    setSwappingOpponentGuestId(spectatorGuestId)
+    setMoveError(null)
+
+    try {
+      await swapPrivateOpponent({
+        guestToken,
+        gameId: asGameId(gameId),
+        spectatorGuestId: asGuestId(spectatorGuestId),
+      })
+    } catch (cause) {
+      setMoveError(getConvexErrorMessage(cause, 'Unable to swap the opponent.'))
+    } finally {
+      setSwappingOpponentGuestId(null)
+    }
+  }
+
   if (isGuestLoading || (guestToken !== null && game === undefined)) {
     return (
       <main className={`${pageWrap} px-4 py-16`}>
@@ -386,6 +456,13 @@ function GamePage() {
   const viewerIsPlayer =
     game.viewerRole === 'playerOne' || game.viewerRole === 'playerTwo'
   const waitingForOpponent = game.status === 'waiting'
+  const privateLobby = game.privateLobby
+  const showPrivateLobby =
+    game.mode === 'private' && waitingForOpponent && privateLobby !== null
+  const canLeavePrivateLobby =
+    showPrivateLobby &&
+    !privateLobby.viewerIsCreator &&
+    (game.viewerRole === 'playerTwo' || game.viewerRole === 'spectator')
   const currentPlayerLabel = describePlayer(game, currentPlayer)
   const winnerSlot = game.state.winner ?? game.winnerSlot
   const winnerLabel = winnerSlot ? describePlayer(game, winnerSlot) : null
@@ -600,78 +677,211 @@ function GamePage() {
 
       {moveError ? <section className={errorPanel}>{moveError}</section> : null}
 
-      <HexBoard
-        canPlay={game.viewerCanMove && !waitingForOpponent}
-        disabled={isSubmittingMove || isConfirmingTurn || game.status !== 'active'}
-        highlightedMoves={highlightedMoves}
-        onSelect={handleSelect}
-        overlay={
-          viewerIsPlayer && game.status === 'active' ? (
-            <div className="grid max-w-[15rem] gap-[0.55rem]">
-              <div className="inline-flex flex-wrap items-center gap-[0.55rem]">
-                <button
-                  aria-label={
-                    pendingDrawOfferedBy === null && remainingDrawMoves > 0
-                      ? `Offer draw available in ${remainingDrawMoves} moves`
-                      : isOfferingDraw
-                        ? 'Sending draw offer'
-                        : 'Offer draw'
-                  }
-                  className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(207,228,237,0.18)] bg-[rgba(10,24,35,0.72)] p-0 text-[rgba(221,234,240,0.92)] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
-                  disabled={!canOfferDraw || isOfferingDraw}
-                  onClick={() => void handleOfferDraw()}
-                  title={
-                    pendingDrawOfferedBy === null && remainingDrawMoves > 0
-                      ? `Offer draw available in ${remainingDrawMoves} moves`
-                      : 'Offer draw'
-                  }
-                  type="button"
-                >
-                  <Handshake size={16} strokeWidth={2.2} />
-                </button>
-                <button
-                  aria-label="Forfeit game"
-                  className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(214,118,95,0.28)] bg-[rgba(10,24,35,0.72)] p-0 text-[#ffd7cf] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
-                  disabled={isForfeitingGame}
-                  onClick={() => setIsConfirmingForfeit(true)}
-                  title="Forfeit"
-                  type="button"
-                >
-                  <Flag size={16} strokeWidth={2.2} />
-                </button>
-                {pendingDrawOfferedBy === null && remainingDrawMoves > 0 ? (
-                  <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
-                    Draw in {remainingDrawMoves}
-                  </span>
-                ) : null}
+      {showPrivateLobby && privateLobby ? (
+        <section
+          className={`${surfacePanel} grid gap-4 rounded-[1.5rem] p-5 max-[720px]:rounded-[1.2rem] max-[720px]:gap-3 max-[720px]:p-3`}
+        >
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="grid gap-1">
+                <p className={eyebrow}>Private game lobby</p>
+                <h2 className="m-0 text-[1.32rem] leading-[1.1] text-[var(--sea-ink)]">
+                  {privateLobby.opponent
+                    ? privateLobby.viewerIsCreator
+                      ? 'Ready when you are.'
+                      : 'Waiting for the creator.'
+                    : 'Waiting for an opponent.'}
+                </h2>
               </div>
-              {isConfirmTurnGame &&
-              viewerSlot !== null &&
-              game.viewerCanMove &&
-              !waitingForOpponent ? (
-                <div className="inline-flex flex-wrap items-center gap-[0.55rem]">
-                  <button
-                    className={`${primaryButton} min-h-10 px-[0.9rem] text-[0.82rem] text-[#0f1820] shadow-[0_10px_24px_rgba(5,13,20,0.22)]`}
-                    disabled={
-                      isConfirmingTurn || pendingCoords.length !== requiredSelections
-                    }
-                    onClick={() => void handleConfirmTurn()}
-                    type="button"
+              <div className="inline-flex min-h-[2rem] items-center rounded-full border border-[color-mix(in_oklab,var(--line)_80%,transparent_20%)] bg-[rgba(255,255,255,0.035)] px-3 text-[0.78rem] font-medium text-[var(--sea-ink-soft)]">
+                {privateLobby.spectators.length} spectator
+                {privateLobby.spectators.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <p className="m-0 max-w-[46rem] text-[0.92rem] leading-[1.6] text-[var(--sea-ink-soft)]">
+              {privateLobby.viewerIsCreator
+                ? privateLobby.opponent
+                  ? 'Start now, or promote a spectator if you want to change the matchup.'
+                  : 'Share the room code. The first joiner becomes the opponent and everyone else waits as a spectator.'
+                : privateLobby.opponent
+                  ? 'The matchup is set. The room creator will start the game.'
+                  : 'You are in the room. The first joining player becomes the opponent.'}
+            </p>
+          </div>
+
+          <div className="grid gap-1 rounded-[1rem] border border-[color-mix(in_oklab,var(--line)_72%,transparent_28%)] bg-[rgba(255,255,255,0.02)] p-2">
+            <LobbyParticipantRow
+              label="Creator"
+              name={privateLobby.creator.displayName}
+              note={privateLobby.viewerIsCreator ? 'You' : 'Host'}
+            />
+            <LobbyParticipantRow
+              label="Opponent"
+              name={privateLobby.opponent?.displayName ?? 'Waiting for opponent'}
+              note={
+                privateLobby.opponent
+                  ? 'Reserved player slot'
+                  : 'First joiner takes this slot'
+              }
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="grid gap-[0.15rem]">
+                <h3 className="m-0 text-[0.98rem]">Spectators</h3>
+                <p className="m-0 text-[0.78rem] text-[var(--sea-ink-soft)]">
+                  {privateLobby.viewerIsCreator
+                    ? 'You can promote any spectator to opponent.'
+                    : 'Spectators watch until the game starts.'}
+                </p>
+              </div>
+              <span className="text-[0.8rem] text-[var(--sea-ink-soft)]">
+                {privateLobby.spectators.length}
+              </span>
+            </div>
+
+            {privateLobby.spectators.length > 0 ? (
+              <div className="grid gap-1 rounded-[1rem] border border-[color-mix(in_oklab,var(--line)_72%,transparent_28%)] bg-[rgba(255,255,255,0.02)] p-2">
+                {privateLobby.spectators.map((spectator) => (
+                  <div
+                    key={spectator.guestId}
+                    className="flex items-center justify-between gap-3 rounded-[0.8rem] px-3 py-[0.72rem] transition-[background-color] duration-[180ms] odd:bg-[rgba(255,255,255,0.015)] max-[720px]:flex-col max-[720px]:items-start"
                   >
-                    {isConfirmingTurn ? 'Confirming…' : 'Confirm move'}
-                  </button>
-                  <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
-                    {pendingCoords.length}/{requiredSelections} selected
-                  </span>
-                </div>
+                    <div className="grid gap-1">
+                      <strong className="text-[0.92rem]">{spectator.displayName}</strong>
+                      <span className="text-[0.76rem] text-[var(--sea-ink-soft)]">
+                        Spectator
+                      </span>
+                    </div>
+                    {privateLobby.viewerIsCreator ? (
+                      <button
+                        className={`${secondaryButton} min-h-[2.45rem] rounded-[1rem] px-3 py-2 text-[0.84rem]`}
+                        disabled={swappingOpponentGuestId !== null}
+                        onClick={() => void handleSwapPrivateOpponent(spectator.guestId)}
+                        type="button"
+                      >
+                        {swappingOpponentGuestId === spectator.guestId
+                          ? 'Updating…'
+                          : 'Make opponent'}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-[0.9rem] border border-dashed border-[color-mix(in_oklab,var(--line)_72%,transparent_28%)] px-3 py-4 text-[0.88rem] text-[var(--sea-ink-soft)]">
+                No spectators yet.
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color-mix(in_oklab,var(--line)_72%,transparent_28%)] pt-3 max-[720px]:items-start">
+            <div className="text-[0.84rem] leading-[1.55] text-[var(--sea-ink-soft)]">
+              {canLeavePrivateLobby
+                ? 'You can leave this room any time before the game starts.'
+                : privateLobby.canStart
+                  ? 'Opening order is randomized when the creator starts the game.'
+                  : 'Start becomes available as soon as an opponent joins.'}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 max-[720px]:w-full">
+              {canLeavePrivateLobby ? (
+                <button
+                  className={`${secondaryButton} min-h-[2.55rem] rounded-[1rem] px-4 py-2`}
+                  disabled={isLeavingGame}
+                  onClick={() => void handleLeavePrivateLobby()}
+                  type="button"
+                >
+                  {isLeavingGame ? 'Leaving…' : 'Leave'}
+                </button>
+              ) : null}
+              {privateLobby.viewerIsCreator ? (
+                <button
+                  className={`${primaryButton} min-h-[2.55rem] rounded-[1rem] px-4 py-2`}
+                  disabled={!privateLobby.canStart || isStartingPrivateGame}
+                  onClick={() => void handleStartPrivateGame()}
+                  type="button"
+                >
+                  {isStartingPrivateGame ? 'Starting…' : 'Start game'}
+                </button>
               ) : null}
             </div>
-          ) : null
-        }
-        pendingMoves={isConfirmTurnGame ? pendingCoords : []}
-        pendingOwner={isConfirmTurnGame ? viewerSlot : null}
-        state={game.state}
-      />
+          </div>
+        </section>
+      ) : (
+        <HexBoard
+          canPlay={game.viewerCanMove && !waitingForOpponent}
+          disabled={isSubmittingMove || isConfirmingTurn || game.status !== 'active'}
+          highlightedMoves={highlightedMoves}
+          onSelect={handleSelect}
+          overlay={
+            viewerIsPlayer && game.status === 'active' ? (
+              <div className="grid max-w-[15rem] gap-[0.55rem]">
+                <div className="inline-flex flex-wrap items-center gap-[0.55rem]">
+                  <button
+                    aria-label={
+                      pendingDrawOfferedBy === null && remainingDrawMoves > 0
+                        ? `Offer draw available in ${remainingDrawMoves} moves`
+                        : isOfferingDraw
+                          ? 'Sending draw offer'
+                          : 'Offer draw'
+                    }
+                    className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(207,228,237,0.18)] bg-[rgba(10,24,35,0.72)] p-0 text-[rgba(221,234,240,0.92)] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
+                    disabled={!canOfferDraw || isOfferingDraw}
+                    onClick={() => void handleOfferDraw()}
+                    title={
+                      pendingDrawOfferedBy === null && remainingDrawMoves > 0
+                        ? `Offer draw available in ${remainingDrawMoves} moves`
+                        : 'Offer draw'
+                    }
+                    type="button"
+                  >
+                    <Handshake size={16} strokeWidth={2.2} />
+                  </button>
+                  <button
+                    aria-label="Forfeit game"
+                    className="inline-flex h-10 w-10 min-h-0 items-center justify-center rounded-full border border-[rgba(214,118,95,0.28)] bg-[rgba(10,24,35,0.72)] p-0 text-[#ffd7cf] shadow-[0_10px_24px_rgba(5,13,20,0.22)] backdrop-blur-[10px] transition-[background-color,color,border-color,transform] duration-[180ms] hover:bg-[rgba(16,35,48,0.88)] disabled:cursor-not-allowed disabled:opacity-[0.56]"
+                    disabled={isForfeitingGame}
+                    onClick={() => setIsConfirmingForfeit(true)}
+                    title="Forfeit"
+                    type="button"
+                  >
+                    <Flag size={16} strokeWidth={2.2} />
+                  </button>
+                  {pendingDrawOfferedBy === null && remainingDrawMoves > 0 ? (
+                    <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
+                      Draw in {remainingDrawMoves}
+                    </span>
+                  ) : null}
+                </div>
+                {isConfirmTurnGame &&
+                viewerSlot !== null &&
+                game.viewerCanMove &&
+                !waitingForOpponent ? (
+                  <div className="inline-flex flex-wrap items-center gap-[0.55rem]">
+                    <button
+                      className={`${primaryButton} min-h-10 px-[0.9rem] text-[0.82rem] text-[#0f1820] shadow-[0_10px_24px_rgba(5,13,20,0.22)]`}
+                      disabled={
+                        isConfirmingTurn || pendingCoords.length !== requiredSelections
+                      }
+                      onClick={() => void handleConfirmTurn()}
+                      type="button"
+                    >
+                      {isConfirmingTurn ? 'Confirming…' : 'Confirm move'}
+                    </button>
+                    <span className="inline-flex min-h-8 items-center rounded-full bg-[rgba(10,24,35,0.72)] px-[0.7rem] py-[0.32rem] text-[0.78rem] font-bold text-[var(--sea-ink-soft)] backdrop-blur-[10px]">
+                      {pendingCoords.length}/{requiredSelections} selected
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null
+          }
+          pendingMoves={isConfirmTurnGame ? pendingCoords : []}
+          pendingOwner={isConfirmTurnGame ? viewerSlot : null}
+          state={game.state}
+        />
+      )}
 
       {game.status === 'finished' ? (
         <div className={modalOverlay} role="presentation">
@@ -857,6 +1067,30 @@ function PlayerCard({
   )
 }
 
+function LobbyParticipantRow({
+  label,
+  name,
+  note,
+}: {
+  label: string
+  name: string
+  note: string
+}) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-1 rounded-[0.8rem] px-3 py-3 odd:bg-[rgba(255,255,255,0.015)] max-[720px]:grid-cols-1 max-[720px]:gap-y-2 max-[720px]:px-2">
+      <span className="text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[var(--sea-ink-soft)]">
+        {label}
+      </span>
+      <div className="grid gap-[0.2rem]">
+        <strong className="text-[1rem] leading-[1.2] text-[var(--sea-ink)]">
+          {name}
+        </strong>
+        <span className="text-[0.8rem] text-[var(--sea-ink-soft)]">{note}</span>
+      </div>
+    </div>
+  )
+}
+
 function describePlayer(game: GameSnapshot, slot: PlayerSlot) {
   return game.players[slot]?.displayName ?? PLAYER_LABELS[slot]
 }
@@ -867,7 +1101,13 @@ function buildTurnCopy(
   winnerLabel: string | null,
 ) {
   if (game.status === 'waiting') {
-    return 'Waiting for the second player to join this private room.'
+    if (game.privateLobby?.opponent) {
+      return game.privateLobby.viewerIsCreator
+        ? 'Private lobby ready. Start whenever you want.'
+        : 'Private lobby ready. Waiting for the creator to start.'
+    }
+
+    return 'Waiting for an opponent to join this private room.'
   }
 
   if (winnerLabel) {

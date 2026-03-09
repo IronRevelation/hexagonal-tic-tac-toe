@@ -1,9 +1,11 @@
-import { v } from 'convex/values'
-import { mutation } from './_generated/server'
+import { ConvexError, v } from 'convex/values'
+import type { Id } from './_generated/dataModel'
+import { mutation, type MutationCtx } from './_generated/server'
 import {
   assertCanJoinAsPlayer,
   canCreatePrivateRoom,
   canDeletePrivateRoom,
+  chooseOpeningOrder,
   createStoredInitialState,
   createUniqueRoomCode,
   getQueueEntry,
@@ -14,6 +16,8 @@ import {
   refreshDisconnectForfeit,
   requireGuest,
   throwGameError,
+  type GuestDoc,
+  type ParticipantDoc,
 } from './lib'
 import type { RoomJoinResult } from '../shared/contracts'
 import { getInitialClockMs } from '../shared/timeControl'
@@ -89,128 +93,41 @@ export const join = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const roomCode = args.roomCode.trim().toUpperCase()
-    const game = await ctx.db
-      .query('games')
-      .withIndex('by_roomCode', (query) => query.eq('roomCode', roomCode))
-      .unique()
+    return joinPrivateGame(ctx, guest, args.roomCode)
+  },
+})
 
-    if (!game || game.mode !== 'private') {
-      throwGameError('GAME_NOT_FOUND', 'Private room not found.')
-    }
+export const start = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await requireGuest(ctx.db, args.guestToken)
+    return startPrivateGame(ctx, guest, args.gameId)
+  },
+})
 
-    const existingParticipant = await getParticipant(ctx.db, game._id, guest._id)
-    if (existingParticipant) {
-      return {
-        gameId: game._id,
-        role: existingParticipant.role,
-      } satisfies RoomJoinResult
-    }
+export const swapOpponent = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+    spectatorGuestId: v.id('guests'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await requireGuest(ctx.db, args.guestToken)
+    return swapPrivateGameOpponent(ctx, guest, args.gameId, args.spectatorGuestId)
+  },
+})
 
-    if (game.status === 'finished') {
-      throwGameError(
-        'GAME_FINISHED',
-        'This room already finished and is not accepting new spectators.',
-      )
-    }
-
-    const participants = await listParticipants(ctx.db, game._id)
-    const playerParticipants = participants.filter(
-      (participant) =>
-        participant.role === 'playerOne' || participant.role === 'playerTwo',
-    )
-    const timestamp = now()
-
-    if (playerParticipants.length < 2) {
-      await assertCanJoinAsPlayer(ctx.db, guest._id, game._id)
-      const queueEntry = await getQueueEntry(ctx.db, guest._id)
-      if (queueEntry) {
-        await ctx.db.delete(queueEntry._id)
-      }
-
-      const creator = playerParticipants[0]
-      if (!creator) {
-        throw new Error('Private room is missing its creator participant.')
-      }
-
-      const creatorStaysPlayerOne =
-        (String(game._id).charCodeAt(0) + String(guest._id).charCodeAt(0)) % 2 === 0
-
-      if (creatorStaysPlayerOne) {
-        const playerTwoParticipantId = await ctx.db.insert('gameParticipants', {
-          gameId: game._id,
-          guestId: guest._id,
-          role: 'playerTwo',
-          joinedAt: timestamp,
-          lastSeenAt: timestamp,
-        })
-        await ctx.db.patch(game._id, {
-          status: 'active',
-          playerOneGuestId: creator.guestId,
-          playerTwoGuestId: guest._id,
-          startedAt: timestamp,
-          updatedAt: timestamp,
-        })
-        const playerOneParticipant = await ctx.db.get(creator._id)
-        const playerTwoParticipant = await ctx.db.get(playerTwoParticipantId)
-
-        if (!playerOneParticipant || !isPlayerParticipant(playerOneParticipant) || !playerTwoParticipant || !isPlayerParticipant(playerTwoParticipant)) {
-          throw new Error('Private game participants were not created correctly.')
-        }
-
-        await refreshDisconnectForfeit(ctx, game._id)
-
-        return {
-          gameId: game._id,
-          role: 'playerTwo',
-        } satisfies RoomJoinResult
-      }
-
-      await ctx.db.patch(creator._id, {
-        role: 'playerTwo',
-        lastSeenAt: timestamp,
-      })
-      const playerOneParticipantId = await ctx.db.insert('gameParticipants', {
-        gameId: game._id,
-        guestId: guest._id,
-        role: 'playerOne',
-        joinedAt: timestamp,
-        lastSeenAt: timestamp,
-      })
-      await ctx.db.patch(game._id, {
-        status: 'active',
-        playerOneGuestId: guest._id,
-        playerTwoGuestId: creator.guestId,
-        startedAt: timestamp,
-        updatedAt: timestamp,
-      })
-      const playerOneParticipant = await ctx.db.get(playerOneParticipantId)
-      const playerTwoParticipant = await ctx.db.get(creator._id)
-
-      if (!playerOneParticipant || !isPlayerParticipant(playerOneParticipant) || !playerTwoParticipant || !isPlayerParticipant(playerTwoParticipant)) {
-        throw new Error('Private game participants were not created correctly.')
-      }
-
-      await refreshDisconnectForfeit(ctx, game._id)
-
-      return {
-        gameId: game._id,
-        role: 'playerOne',
-      } satisfies RoomJoinResult
-    }
-
-    await ctx.db.insert('gameParticipants', {
-      gameId: game._id,
-      guestId: guest._id,
-      role: 'spectator',
-      joinedAt: timestamp,
-      lastSeenAt: timestamp,
-    })
-
-    return {
-      gameId: game._id,
-      role: 'spectator',
-    } satisfies RoomJoinResult
+export const leaveLobby = mutation({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await requireGuest(ctx.db, args.guestToken)
+    return leavePrivateGameLobby(ctx, guest, args.gameId)
   },
 })
 
@@ -254,3 +171,305 @@ export const remove = mutation({
     return { ok: true }
   },
 })
+
+export async function joinPrivateGame(
+  ctx: Pick<MutationCtx, 'db'>,
+  guest: GuestDoc,
+  roomCodeValue: string,
+) {
+  const roomCode = roomCodeValue.trim().toUpperCase()
+  const game = await ctx.db
+    .query('games')
+    .withIndex('by_roomCode', (query) => query.eq('roomCode', roomCode))
+    .unique()
+
+  if (!game || game.mode !== 'private') {
+    throwGameError('GAME_NOT_FOUND', 'Private room not found.')
+  }
+
+  const existingParticipant = await getParticipant(ctx.db, game._id, guest._id)
+  if (existingParticipant) {
+    return {
+      gameId: game._id,
+      role: existingParticipant.role,
+    } satisfies RoomJoinResult
+  }
+
+  if (game.status === 'finished') {
+    throwGameError(
+      'GAME_FINISHED',
+      'This room already finished and is not accepting new spectators.',
+    )
+  }
+
+  const participants = await listParticipants(ctx.db, game._id)
+  const playerParticipants = listPlayerParticipants(participants)
+  const timestamp = now()
+
+  if (playerParticipants.length < 2) {
+    await assertCanJoinAsPlayer(ctx.db, guest._id, game._id)
+    const queueEntry = await getQueueEntry(ctx.db, guest._id)
+    if (queueEntry) {
+      await ctx.db.delete(queueEntry._id)
+    }
+
+    const creator = playerParticipants[0]
+    if (!creator) {
+      throw new Error('Private room is missing its creator participant.')
+    }
+
+    await ctx.db.insert('gameParticipants', {
+      gameId: game._id,
+      guestId: guest._id,
+      role: 'playerTwo',
+      joinedAt: timestamp,
+      lastSeenAt: timestamp,
+    })
+
+    await ctx.db.patch(game._id, {
+      updatedAt: timestamp,
+    })
+
+    return {
+      gameId: game._id,
+      role: 'playerTwo',
+    } satisfies RoomJoinResult
+  }
+
+  await ctx.db.insert('gameParticipants', {
+    gameId: game._id,
+    guestId: guest._id,
+    role: 'spectator',
+    joinedAt: timestamp,
+    lastSeenAt: timestamp,
+  })
+
+  await ctx.db.patch(game._id, {
+    updatedAt: timestamp,
+  })
+
+  return {
+    gameId: game._id,
+    role: 'spectator',
+  } satisfies RoomJoinResult
+}
+
+export async function startPrivateGame(
+  ctx: MutationCtx,
+  guest: GuestDoc,
+  gameId: Id<'games'>,
+) {
+  const game = await ctx.db.get(gameId)
+
+  if (!game || game.mode !== 'private') {
+    throwGameError('GAME_NOT_FOUND', 'Private room not found.')
+  }
+
+  if (game.status !== 'waiting' || game.createdByGuestId !== guest._id) {
+    throwGameError(
+      'PRIVATE_ROOM_START_NOT_ALLOWED',
+      'Only the private room creator can start this game before it begins.',
+    )
+  }
+
+  const participants = await listParticipants(ctx.db, game._id)
+  const creatorParticipant = participants.find(
+    (participant) => participant.guestId === game.createdByGuestId,
+  )
+  const opponentParticipant =
+    participants.find((participant) => participant.role === 'playerTwo') ?? null
+
+  if (!creatorParticipant || creatorParticipant.role !== 'playerOne') {
+    throw new Error('Private room is missing its creator player.')
+  }
+
+  if (!opponentParticipant) {
+    throwGameError(
+      'PRIVATE_ROOM_OPPONENT_REQUIRED',
+      'A private room needs an opponent before the creator can start the game.',
+    )
+  }
+
+  const timestamp = now()
+  const openingOrder = chooseOpeningOrder(
+    game.createdByGuestId,
+    opponentParticipant.guestId,
+    String(game._id),
+  )
+  const creatorRole =
+    openingOrder.playerOneGuestId === creatorParticipant.guestId
+      ? 'playerOne'
+      : 'playerTwo'
+  const opponentRole = creatorRole === 'playerOne' ? 'playerTwo' : 'playerOne'
+
+  await ctx.db.patch(creatorParticipant._id, {
+    role: creatorRole,
+    lastSeenAt: timestamp,
+  })
+  await ctx.db.patch(opponentParticipant._id, {
+    role: opponentRole,
+    lastSeenAt: timestamp,
+  })
+
+  const playerParticipants = await Promise.all([
+    ctx.db.get(creatorParticipant._id),
+    ctx.db.get(opponentParticipant._id),
+  ])
+
+  if (!playerParticipants.every(isPlayerParticipant)) {
+    throw new Error('Private game participants were not created correctly.')
+  }
+
+  await ctx.db.patch(game._id, {
+    status: 'active',
+    playerOneGuestId: openingOrder.playerOneGuestId,
+    playerTwoGuestId: openingOrder.playerTwoGuestId,
+    startedAt: timestamp,
+    updatedAt: timestamp,
+  })
+
+  await refreshDisconnectForfeit(ctx, game._id)
+
+  return { ok: true }
+}
+
+export async function swapPrivateGameOpponent(
+  ctx: Pick<MutationCtx, 'db'>,
+  guest: GuestDoc,
+  gameId: Id<'games'>,
+  spectatorGuestId: Id<'guests'>,
+) {
+  const game = await ctx.db.get(gameId)
+
+  if (!game || game.mode !== 'private') {
+    throwGameError('GAME_NOT_FOUND', 'Private room not found.')
+  }
+
+  if (game.status !== 'waiting' || game.createdByGuestId !== guest._id) {
+    throwGameError(
+      'PRIVATE_ROOM_SWAP_NOT_ALLOWED',
+      'Only the private room creator can change the opponent before the game starts.',
+    )
+  }
+
+  const participants = await listParticipants(ctx.db, game._id)
+  const currentOpponent =
+    participants.find((participant) => participant.role === 'playerTwo') ?? null
+  const spectator = participants.find(
+    (participant) =>
+      participant.guestId === spectatorGuestId && participant.role === 'spectator',
+  )
+
+  if (!currentOpponent || !spectator) {
+    throwGameError(
+      'PRIVATE_ROOM_SWAP_NOT_ALLOWED',
+      'Choose a spectator to replace the current opponent before the game starts.',
+    )
+  }
+
+  await assertCanJoinAsPlayer(ctx.db, spectatorGuestId, game._id)
+  const queueEntry = await getQueueEntry(ctx.db, spectatorGuestId)
+  if (queueEntry) {
+    await ctx.db.delete(queueEntry._id)
+  }
+
+  const timestamp = now()
+
+  await ctx.db.patch(currentOpponent._id, {
+    role: 'spectator',
+    lastSeenAt: timestamp,
+  })
+  await ctx.db.patch(spectator._id, {
+    role: 'playerTwo',
+    lastSeenAt: timestamp,
+  })
+  await ctx.db.patch(game._id, {
+    updatedAt: timestamp,
+  })
+
+  return { ok: true }
+}
+
+export async function leavePrivateGameLobby(
+  ctx: Pick<MutationCtx, 'db'>,
+  guest: GuestDoc,
+  gameId: Id<'games'>,
+) {
+  const game = await ctx.db.get(gameId)
+
+  if (!game || game.mode !== 'private') {
+    throwGameError('GAME_NOT_FOUND', 'Private room not found.')
+  }
+
+  const participants = await listParticipants(ctx.db, game._id)
+  const participant = await getParticipant(ctx.db, game._id, guest._id)
+
+  if (
+    game.status !== 'waiting' ||
+    !participant ||
+    participant.role === 'playerOne' ||
+    game.createdByGuestId === guest._id
+  ) {
+    throwGameError(
+      'PRIVATE_ROOM_LEAVE_NOT_ALLOWED',
+      'Only the waiting-room opponent or a spectator can leave this private room.',
+    )
+  }
+
+  const replacementOpponent =
+    participant.role === 'playerTwo'
+      ? await findReplacementOpponent(ctx.db, participants, game._id)
+      : null
+  const timestamp = now()
+
+  await ctx.db.delete(participant._id)
+  if (replacementOpponent) {
+    await ctx.db.patch(replacementOpponent._id, {
+      role: 'playerTwo',
+      lastSeenAt: timestamp,
+    })
+  }
+  await ctx.db.patch(game._id, {
+    updatedAt: timestamp,
+  })
+
+  return { ok: true }
+}
+
+function listPlayerParticipants(participants: ParticipantDoc[]) {
+  return participants.filter(
+    (participant) =>
+      participant.role === 'playerOne' || participant.role === 'playerTwo',
+  )
+}
+
+async function findReplacementOpponent(
+  db: Pick<MutationCtx, 'db'>['db'],
+  participants: ParticipantDoc[],
+  gameId: Id<'games'>,
+) {
+  const spectators = participants
+    .filter((participant) => participant.role === 'spectator')
+    .sort((left, right) => left.joinedAt - right.joinedAt)
+
+  for (const spectator of spectators) {
+    try {
+      await assertCanJoinAsPlayer(db, spectator.guestId, gameId)
+      return spectator
+    } catch (cause) {
+      if (
+        cause instanceof ConvexError &&
+        cause.data &&
+        typeof cause.data === 'object' &&
+        'code' in cause.data &&
+        cause.data.code === 'ALREADY_IN_GAME'
+      ) {
+        continue
+      }
+
+      throw cause
+    }
+  }
+
+  return null
+}

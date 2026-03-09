@@ -35,6 +35,19 @@ export type PlayerPresence = {
   role: 'playerOne' | 'playerTwo'
 }
 
+export type PrivateLobbyParticipant = {
+  guestId: string
+  displayName: string
+}
+
+export type PrivateLobbySnapshot = {
+  creator: PrivateLobbyParticipant
+  opponent: PrivateLobbyParticipant | null
+  spectators: PrivateLobbyParticipant[]
+  viewerIsCreator: boolean
+  canStart: boolean
+}
+
 export type GameClockSnapshot = {
   preset: TimedTimeControlPreset
   initialTimeMs: number
@@ -60,6 +73,7 @@ export type GameSnapshot = {
   state: SerializedGameState
   players: Record<PlayerSlot, PlayerPresence | null>
   spectatorCount: number
+  privateLobby: PrivateLobbySnapshot | null
   canDeleteRoom: boolean
   clock: GameClockSnapshot | null
   rematch: RematchState

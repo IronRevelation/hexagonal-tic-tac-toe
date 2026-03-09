@@ -56,29 +56,33 @@ export type GameClockSnapshot = {
   serverNow: number
 }
 
-export type GameSnapshot = {
+export type LiveGameCoreSnapshot = {
   gameId: string
-  mode: GameMode
   status: GameStatus
   finishReason: GameFinishReason | null
-  timeControl: TimeControlPreset
   winnerSlot: PlayerSlot | null
-  roomCode: string | null
-  seriesId: string | null
-  previousGameId: string | null
   nextGameId: string | null
   viewerRole: ParticipantRole | null
   viewerCanMove: boolean
   turnCommitMode: TurnCommitMode
   state: SerializedGameState
-  players: Record<PlayerSlot, PlayerPresence | null>
-  spectatorCount: number
-  privateLobby: PrivateLobbySnapshot | null
-  canDeleteRoom: boolean
   clock: GameClockSnapshot | null
   rematch: RematchState
   drawOffer: DrawOfferState
-  updatedAt: number
+}
+
+export type LiveGameRoomSnapshot = {
+  gameId: string
+  mode: GameMode
+  roomCode: string | null
+  players: Record<PlayerSlot, PlayerPresence | null>
+  spectatorCount: number
+  canDeleteRoom: boolean
+}
+
+export type PresenceAccessSnapshot = {
+  gameId: string
+  slot: PlayerSlot
 }
 
 export type MatchmakingStatus =

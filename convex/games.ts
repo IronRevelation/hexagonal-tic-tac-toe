@@ -4,10 +4,13 @@ import type { MutationCtx } from './_generated/server'
 import {
   compareHistoryEntries,
   buildHistoryEntry,
+  buildLiveGameCoreSnapshot,
+  buildLiveGameRoomSnapshot,
+  buildLivePrivateLobbySnapshot,
+  buildPresenceAccessSnapshot,
   buildReplayData,
   assertValidMoveCoord,
   buildForfeitGamePatch,
-  buildGameSnapshot,
   buildResolvedClockPatch,
   buildTimeoutGamePatch,
   clearDrawOfferFields,
@@ -69,7 +72,7 @@ export const resumeForGuest = query({
   },
 })
 
-export const byIdForGuest = query({
+export const liveCoreByIdForGuest = query({
   args: {
     guestToken: v.string(),
     gameId: v.id('games'),
@@ -85,7 +88,67 @@ export const byIdForGuest = query({
       return null
     }
 
-    return buildGameSnapshot(ctx.db, guest, game)
+    return buildLiveGameCoreSnapshot(ctx.db, guest, game)
+  },
+})
+
+export const liveRoomByIdForGuest = query({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await getGuestByToken(ctx.db, args.guestToken)
+    if (!guest) {
+      return null
+    }
+
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      return null
+    }
+
+    return buildLiveGameRoomSnapshot(ctx.db, guest, game)
+  },
+})
+
+export const livePrivateLobbyByIdForGuest = query({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await getGuestByToken(ctx.db, args.guestToken)
+    if (!guest) {
+      return null
+    }
+
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      return null
+    }
+
+    return buildLivePrivateLobbySnapshot(ctx.db, guest, game)
+  },
+})
+
+export const presenceAccessByIdForGuest = query({
+  args: {
+    guestToken: v.string(),
+    gameId: v.id('games'),
+  },
+  handler: async (ctx, args) => {
+    const guest = await getGuestByToken(ctx.db, args.guestToken)
+    if (!guest) {
+      return null
+    }
+
+    const game = await ctx.db.get(args.gameId)
+    if (!game) {
+      return null
+    }
+
+    return buildPresenceAccessSnapshot(ctx.db, guest, game)
   },
 })
 

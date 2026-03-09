@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildGameSnapshot,
   buildHistoryEntry,
+  buildLiveGameCoreSnapshot,
+  buildLiveGameRoomSnapshot,
+  buildLivePrivateLobbySnapshot,
+  buildPresenceAccessSnapshot,
   buildReplayData,
   buildResolvedClockPatch,
   buildForfeitGamePatch,
@@ -124,7 +127,7 @@ describe('draw offer helpers', () => {
     expect(canCreatePrivateRoom(true)).toBe(false)
   })
 
-  it('builds private lobby snapshot data for waiting private rooms', async () => {
+  it('builds split live snapshots for waiting private rooms', async () => {
     const creatorId = 'guest_creator' as never
     const opponentId = 'guest_opponent' as never
     const spectatorId = 'guest_spectator' as never
@@ -180,44 +183,228 @@ describe('draw offer helpers', () => {
       },
     }
 
+    const game = {
+      _id: 'game_1',
+      mode: 'private',
+      status: 'waiting',
+      createdByGuestId: creatorId,
+      playerOneGuestId: creatorId,
+      serializedState: createStoredInitialState(),
+      updatedAt: 40,
+      rematchRequestedByPlayerOne: false,
+      rematchRequestedByPlayerTwo: false,
+      nextDrawOfferMoveIndexPlayerOne: 0,
+      nextDrawOfferMoveIndexPlayerTwo: 0,
+    } as never
+
+    await expect(buildLiveGameCoreSnapshot(db as never, { _id: creatorId } as never, game))
+      .resolves.toMatchObject({
+        viewerRole: 'playerOne',
+        viewerCanMove: false,
+        status: 'waiting',
+        rematch: {
+          requestedByPlayerOne: false,
+          requestedByPlayerTwo: false,
+          nextGameId: null,
+        },
+        drawOffer: {
+          offeredBy: null,
+          offeredAtMoveIndex: null,
+          minMoveIndexForPlayerOne: 0,
+          minMoveIndexForPlayerTwo: 0,
+        },
+      })
+
+    await expect(buildLiveGameRoomSnapshot(db as never, { _id: creatorId } as never, game))
+      .resolves.toMatchObject({
+        mode: 'private',
+        spectatorCount: 1,
+        players: {
+          one: {
+            displayName: 'Amber Crane 10',
+          },
+          two: {
+            displayName: 'River Otter 01',
+          },
+        },
+      })
+
     await expect(
-      buildGameSnapshot(
+      buildLivePrivateLobbySnapshot(db as never, { _id: creatorId } as never, game),
+    ).resolves.toMatchObject({
+      creator: {
+        guestId: creatorId,
+        displayName: 'Amber Crane 10',
+      },
+      opponent: {
+        guestId: opponentId,
+        displayName: 'River Otter 01',
+      },
+      spectators: [
+        {
+          guestId: spectatorId,
+          displayName: 'Golden Falcon 22',
+        },
+      ],
+      viewerIsCreator: true,
+      canStart: true,
+    })
+  })
+
+  it('returns null private lobby snapshots outside waiting private rooms', async () => {
+    const creatorId = 'guest_creator' as never
+    const db = {
+      query() {
+        return {
+          withIndex(_index: string, builder: (query: { eq: (field: string, value: string) => unknown }) => unknown) {
+            const query = {
+              eq(_field: string, _value: string) {
+                return query
+              },
+            }
+            builder(query)
+            return {
+              collect: async () => [{ guestId: creatorId, role: 'playerOne', joinedAt: 1 }],
+            }
+          },
+        }
+      },
+    }
+
+    await expect(
+      buildLivePrivateLobbySnapshot(
         db as never,
         { _id: creatorId } as never,
         {
-          _id: 'game_1',
+          _id: 'game_active',
           mode: 'private',
-          status: 'waiting',
-          createdByGuestId: creatorId,
-          playerOneGuestId: creatorId,
-          serializedState: createStoredInitialState(),
-          updatedAt: 40,
-          rematchRequestedByPlayerOne: false,
-          rematchRequestedByPlayerTwo: false,
+          status: 'active',
         } as never,
       ),
-    ).resolves.toMatchObject({
-      viewerRole: 'playerOne',
-      spectatorCount: 1,
-      privateLobby: {
-        creator: {
-          guestId: creatorId,
-          displayName: 'Amber Crane 10',
-        },
-        opponent: {
-          guestId: opponentId,
-          displayName: 'River Otter 01',
-        },
-        spectators: [
-          {
-            guestId: spectatorId,
-            displayName: 'Golden Falcon 22',
-          },
-        ],
-        viewerIsCreator: true,
-        canStart: true,
+    ).resolves.toBeNull()
+
+    await expect(
+      buildLivePrivateLobbySnapshot(
+        db as never,
+        { _id: creatorId } as never,
+        {
+          _id: 'game_matchmaking',
+          mode: 'matchmaking',
+          status: 'waiting',
+        } as never,
+      ),
+    ).resolves.toBeNull()
+
+    await expect(
+      buildLivePrivateLobbySnapshot(
+        db as never,
+        { _id: creatorId } as never,
+        {
+          _id: 'game_finished',
+          mode: 'private',
+          status: 'finished',
+        } as never,
+      ),
+    ).resolves.toBeNull()
+  })
+
+  it('builds presence access only for players', async () => {
+    const creatorId = 'guest_creator' as never
+    const opponentId = 'guest_opponent' as never
+    const spectatorId = 'guest_spectator' as never
+    const participants: Array<{
+      guestId: string
+      gameId: string
+      role: 'playerOne' | 'playerTwo' | 'spectator'
+      joinedAt: number
+    }> = [
+      {
+        guestId: creatorId,
+        gameId: 'game_1',
+        role: 'playerOne',
+        joinedAt: 1,
       },
+      {
+        guestId: opponentId,
+        gameId: 'game_1',
+        role: 'playerTwo',
+        joinedAt: 2,
+      },
+      {
+        guestId: spectatorId,
+        gameId: 'game_1',
+        role: 'spectator',
+        joinedAt: 3,
+      },
+    ]
+    const db = {
+      query(table: string) {
+        expect(table).toBe('gameParticipants')
+        return {
+          withIndex(
+            index: string,
+            builder: (query: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) {
+            expect(index).toBe('by_gameId_guestId')
+            const filters: Record<string, string> = {}
+            const query = {
+              eq(field: string, value: string) {
+                filters[field] = value
+                return query
+              },
+            }
+            builder(query)
+            return {
+              unique: async () =>
+                participants.find(
+                  (participant) =>
+                    participant.gameId === filters.gameId &&
+                    participant.guestId === filters.guestId,
+                ) ?? null,
+            }
+          },
+        }
+      },
+    }
+    const game = { _id: 'game_1' } as never
+
+    await expect(
+      buildPresenceAccessSnapshot(
+        db as never,
+        { _id: creatorId } as never,
+        game,
+      ),
+    ).resolves.toEqual({
+      gameId: 'game_1',
+      slot: 'one',
     })
+
+    await expect(
+      buildPresenceAccessSnapshot(
+        db as never,
+        { _id: opponentId } as never,
+        game,
+      ),
+    ).resolves.toEqual({
+      gameId: 'game_1',
+      slot: 'two',
+    })
+
+    await expect(
+      buildPresenceAccessSnapshot(
+        db as never,
+        { _id: spectatorId } as never,
+        game,
+      ),
+    ).resolves.toBeNull()
+
+    await expect(
+      buildPresenceAccessSnapshot(
+        db as never,
+        { _id: 'guest_missing' } as never,
+        game,
+      ),
+    ).resolves.toBeNull()
   })
 
   it('only depletes the active player clock', () => {

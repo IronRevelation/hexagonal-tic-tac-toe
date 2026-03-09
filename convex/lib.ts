@@ -23,10 +23,12 @@ import type {
   GameFinishReason,
   GameMode,
   GameReplayData,
-  GameSnapshot,
   GameStatus,
   GuestSession,
+  LiveGameCoreSnapshot,
+  LiveGameRoomSnapshot,
   ParticipantRole,
+  PresenceAccessSnapshot,
   PrivateLobbyParticipant,
   PrivateLobbySnapshot,
   PlayerPresence,
@@ -610,11 +612,56 @@ export async function createUniqueRoomCode(
   throw new Error('Failed to generate a unique room code.')
 }
 
-export async function buildGameSnapshot(
+export async function buildLiveGameCoreSnapshot(
   db: DatabaseReader,
   guest: GuestDoc,
   game: GameDoc,
-): Promise<GameSnapshot | null> {
+): Promise<LiveGameCoreSnapshot | null> {
+  const participants = await listParticipants(db, game._id)
+  const viewer = participants.find((participant) => participant.guestId === guest._id) ?? null
+
+  if (!viewer) {
+    return null
+  }
+
+  const snapshotTime = now()
+  const state = fromStoredState(game.serializedState)
+  const clock = resolveTimedGameClock(game, state.currentPlayer, snapshotTime)
+  const viewerCanMove =
+    game.status === 'active' &&
+    ((viewer.role === 'playerOne' && state.currentPlayer === 'one') ||
+      (viewer.role === 'playerTwo' && state.currentPlayer === 'two'))
+
+  return {
+    gameId: game._id,
+    status: game.status as GameStatus,
+    finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
+    winnerSlot: game.winnerSlot ?? null,
+    nextGameId: game.nextGameId ?? null,
+    viewerRole: viewer.role as ParticipantRole,
+    viewerCanMove,
+    turnCommitMode: normalizeTurnCommitMode(game),
+    state,
+    clock,
+    rematch: {
+      requestedByPlayerOne: game.rematchRequestedByPlayerOne,
+      requestedByPlayerTwo: game.rematchRequestedByPlayerTwo,
+      nextGameId: game.nextGameId ?? null,
+    },
+    drawOffer: {
+      offeredBy: game.drawOfferedBy ?? null,
+      offeredAtMoveIndex: game.drawOfferedAtMoveIndex ?? null,
+      minMoveIndexForPlayerOne: game.nextDrawOfferMoveIndexPlayerOne ?? 0,
+      minMoveIndexForPlayerTwo: game.nextDrawOfferMoveIndexPlayerTwo ?? 0,
+    } satisfies DrawOfferState,
+  }
+}
+
+export async function buildLiveGameRoomSnapshot(
+  db: DatabaseReader,
+  guest: GuestDoc,
+  game: GameDoc,
+): Promise<LiveGameRoomSnapshot | null> {
   const participants = await listParticipants(db, game._id)
   const viewer = participants.find((participant) => participant.guestId === guest._id) ?? null
 
@@ -630,59 +677,52 @@ export async function buildGameSnapshot(
     (participant) => participant.role === 'spectator',
   ).length
 
-  const playerOne = playerOneParticipant
-    ? await buildPlayerPresence(db, playerOneParticipant)
-    : null
-  const playerTwo = playerTwoParticipant
-    ? await buildPlayerPresence(db, playerTwoParticipant)
-    : null
-  const privateLobby =
-    game.mode === 'private' && game.status === 'waiting'
-      ? await buildPrivateLobbySnapshot(db, game, participants, guest._id)
-      : null
-  const snapshotTime = now()
-  const state = fromStoredState(game.serializedState)
-  const clock = resolveTimedGameClock(game, state.currentPlayer, snapshotTime)
-  const viewerCanMove =
-    game.status === 'active' &&
-    ((viewer.role === 'playerOne' && state.currentPlayer === 'one') ||
-      (viewer.role === 'playerTwo' && state.currentPlayer === 'two'))
+  const [playerOne, playerTwo] = await Promise.all([
+    playerOneParticipant ? buildPlayerPresence(db, playerOneParticipant) : Promise.resolve(null),
+    playerTwoParticipant ? buildPlayerPresence(db, playerTwoParticipant) : Promise.resolve(null),
+  ])
 
   return {
     gameId: game._id,
     mode: game.mode as GameMode,
-    status: game.status as GameStatus,
-    finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
-    timeControl: normalizeGameTimeControl(game),
-    winnerSlot: game.winnerSlot ?? null,
     roomCode: game.roomCode ?? null,
-    seriesId: game.seriesId ?? null,
-    previousGameId: game.previousGameId ?? null,
-    nextGameId: game.nextGameId ?? null,
-    viewerRole: viewer.role as ParticipantRole,
-    viewerCanMove,
-    turnCommitMode: normalizeTurnCommitMode(game),
-    state,
     players: {
       one: playerOne,
       two: playerTwo,
     },
     spectatorCount,
-    privateLobby,
     canDeleteRoom: canDeletePrivateRoom(game, participants, guest._id),
-    clock,
-    rematch: {
-      requestedByPlayerOne: game.rematchRequestedByPlayerOne,
-      requestedByPlayerTwo: game.rematchRequestedByPlayerTwo,
-      nextGameId: game.nextGameId ?? null,
-    },
-    drawOffer: {
-      offeredBy: game.drawOfferedBy ?? null,
-      offeredAtMoveIndex: game.drawOfferedAtMoveIndex ?? null,
-      minMoveIndexForPlayerOne: game.nextDrawOfferMoveIndexPlayerOne ?? 0,
-      minMoveIndexForPlayerTwo: game.nextDrawOfferMoveIndexPlayerTwo ?? 0,
-    } satisfies DrawOfferState,
-    updatedAt: game.updatedAt,
+  }
+}
+
+export async function buildLivePrivateLobbySnapshot(
+  db: DatabaseReader,
+  guest: GuestDoc,
+  game: GameDoc,
+): Promise<PrivateLobbySnapshot | null> {
+  const participants = await listParticipants(db, game._id)
+  const viewer = participants.find((participant) => participant.guestId === guest._id) ?? null
+
+  if (!viewer || game.mode !== 'private' || game.status !== 'waiting') {
+    return null
+  }
+
+  return buildPrivateLobbySnapshot(db, game, participants, guest._id)
+}
+
+export async function buildPresenceAccessSnapshot(
+  db: DatabaseReader,
+  guest: GuestDoc,
+  game: GameDoc,
+): Promise<PresenceAccessSnapshot | null> {
+  const participant = await getParticipant(db, game._id, guest._id)
+  if (!participant || !isPlayerParticipant(participant)) {
+    return null
+  }
+
+  return {
+    gameId: game._id,
+    slot: requirePlayerRole(participant.role),
   }
 }
 

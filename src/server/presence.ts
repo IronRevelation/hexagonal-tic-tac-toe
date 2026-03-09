@@ -142,34 +142,18 @@ async function verifyPresenceToken(token: string, secret: string) {
   return payload
 }
 
-function roleToSlot(viewerRole: string | null) {
-  if (viewerRole === 'playerOne') {
-    return 'one' as const
-  }
-  if (viewerRole === 'playerTwo') {
-    return 'two' as const
-  }
-
-  return null
-}
-
 export const mintPresenceToken = createServerFn({ method: 'POST' })
   .inputValidator((input: { guestToken: string; gameId: string }) => input)
   .handler(async ({ data }): Promise<PresenceTokenResponse> => {
     const config = requirePresenceConfig()
     const client = getConvexClient(config.convexUrl)
-    const game = await client.query(api.games.byIdForGuest, {
+    const access = await client.query(api.games.presenceAccessByIdForGuest, {
       guestToken: data.guestToken,
       gameId: asGameId(data.gameId),
     })
 
-    if (!game) {
+    if (!access) {
       throw new Error('This game is not available to this guest.')
-    }
-
-    const slot = roleToSlot(game.viewerRole)
-    if (!slot) {
-      throw new Error('Only players can use live presence.')
     }
 
     const expiresAt = Date.now() + PRESENCE_TOKEN_TTL_MS
@@ -177,7 +161,7 @@ export const mintPresenceToken = createServerFn({ method: 'POST' })
       {
         sub: data.guestToken,
         gameId: data.gameId,
-        slot,
+        slot: access.slot,
         exp: expiresAt,
       },
       config.tokenSecret,
@@ -186,7 +170,7 @@ export const mintPresenceToken = createServerFn({ method: 'POST' })
     return {
       token,
       expiresAt,
-      slot,
+      slot: access.slot,
     }
   })
 

@@ -171,7 +171,6 @@ export type PrivacyExport = {
     displayName: string
     state: 'active' | 'erased'
     createdAt: number
-    lastSeenAt: number
     erasedAt: number | null
     retentionExpiresAt: number
   }

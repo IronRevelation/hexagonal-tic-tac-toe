@@ -159,13 +159,11 @@ export async function ensureGuest(
 
   if (existing) {
     await ctx.db.patch(existing._id, {
-      lastSeenAt: seenAt,
       retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
       state: 'active',
     })
     const refreshedGuest: GuestDoc = {
       ...existing,
-      lastSeenAt: seenAt,
       retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
       state: 'active',
     }
@@ -178,7 +176,6 @@ export async function ensureGuest(
     displayName,
     state: 'active',
     createdAt: seenAt,
-    lastSeenAt: seenAt,
     retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
   })
 

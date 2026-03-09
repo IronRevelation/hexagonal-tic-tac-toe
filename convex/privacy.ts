@@ -56,7 +56,6 @@ export const exportMyData = query({
         displayName: guest.displayName,
         state: guest.state,
         createdAt: guest.createdAt,
-        lastSeenAt: guest.lastSeenAt,
         erasedAt: guest.erasedAt ?? null,
         retentionExpiresAt: guest.retentionExpiresAt,
       },
@@ -144,7 +143,6 @@ export const eraseMyData = mutation({
       displayName: 'Deleted guest',
       state: 'erased',
       erasedAt: timestamp,
-      lastSeenAt: 0,
       retentionExpiresAt: timestamp,
     })
 

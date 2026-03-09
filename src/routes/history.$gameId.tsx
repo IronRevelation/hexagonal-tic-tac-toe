@@ -4,6 +4,7 @@ import { getClientStoredGuestToken } from '../lib/GuestSessionProvider'
 import { replayQueryOptions } from '../lib/historyQueries'
 
 export const Route = createFileRoute('/history/$gameId')({
+  preloadStaleTime: 300_000,
   loader: async ({ context, params }) => {
     const guestToken = getClientStoredGuestToken()
     if (!guestToken) {

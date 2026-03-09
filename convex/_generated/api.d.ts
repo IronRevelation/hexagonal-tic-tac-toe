@@ -13,6 +13,7 @@ import type * as games from "../games.js";
 import type * as guests from "../guests.js";
 import type * as lib from "../lib.js";
 import type * as matchmaking from "../matchmaking.js";
+import type * as presence from "../presence.js";
 import type * as privacy from "../privacy.js";
 import type * as privateGames from "../privateGames.js";
 
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   guests: typeof guests;
   lib: typeof lib;
   matchmaking: typeof matchmaking;
+  presence: typeof presence;
   privacy: typeof privacy;
   privateGames: typeof privateGames;
 }>;

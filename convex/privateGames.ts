@@ -158,8 +158,7 @@ export const join = mutation({
           throw new Error('Private game participants were not created correctly.')
         }
 
-        await refreshDisconnectForfeit(ctx, game._id, playerOneParticipant, timestamp)
-        await refreshDisconnectForfeit(ctx, game._id, playerTwoParticipant, timestamp)
+        await refreshDisconnectForfeit(ctx, game._id)
 
         return {
           gameId: game._id,
@@ -192,8 +191,7 @@ export const join = mutation({
         throw new Error('Private game participants were not created correctly.')
       }
 
-      await refreshDisconnectForfeit(ctx, game._id, playerOneParticipant, timestamp)
-      await refreshDisconnectForfeit(ctx, game._id, playerTwoParticipant, timestamp)
+      await refreshDisconnectForfeit(ctx, game._id)
 
       return {
         gameId: game._id,

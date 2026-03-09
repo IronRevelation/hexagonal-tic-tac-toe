@@ -33,7 +33,6 @@ export type DrawOfferState = {
 export type PlayerPresence = {
   displayName: string
   role: 'playerOne' | 'playerTwo'
-  isOnline: boolean
 }
 
 export type GameClockSnapshot = {

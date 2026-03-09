@@ -10,7 +10,6 @@ import {
   type HexCoord,
   type PlayerSlot,
   type SerializedGameState,
-  type TurnCommitMode,
 } from '../../shared/hexGame'
 import { primaryButton, surfacePanel } from '../lib/ui'
 
@@ -50,7 +49,6 @@ export default function HexBoard({
   overlay,
   pendingMoves = [],
   pendingOwner = null,
-  turnCommitMode = 'instant',
 }: {
   state: SerializedGameState
   canPlay: boolean
@@ -60,7 +58,6 @@ export default function HexBoard({
   overlay?: React.ReactNode
   pendingMoves?: HexCoord[]
   pendingOwner?: PlayerSlot | null
-  turnCommitMode?: TurnCommitMode
 }) {
   const [camera, setCamera] = useState(INITIAL_CAMERA)
   const [viewport, setViewport] = useState<ViewportSize>({ width: 0, height: 0 })

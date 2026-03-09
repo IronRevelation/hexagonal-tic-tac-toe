@@ -21,7 +21,6 @@ import {
   surfacePanel,
   textInput,
 } from '../lib/ui'
-import { useVisibleHeartbeat } from '../lib/useVisibleHeartbeat'
 import { TIME_CONTROL_PRESETS, type TimeControlPreset } from '../../shared/timeControl'
 import { type TurnCommitMode } from '../../shared/hexGame'
 import { DEFAULT_PRIVATE_TURN_COMMIT_MODE } from '../lib/turnSubmission'
@@ -50,8 +49,6 @@ function LobbyPage() {
     api.matchmaking.status,
     guestToken ? { guestToken } : 'skip',
   )
-
-  useVisibleHeartbeat(guestToken)
 
   useEffect(() => {
     if (!matchmakingStatus) {

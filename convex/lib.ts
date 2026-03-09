@@ -34,6 +34,7 @@ import {
   type TimeControlPreset,
   type TimedTimeControlPreset,
 } from '../shared/timeControl'
+import { DISCONNECT_VERIFIER_MS } from '../shared/presence'
 
 const ADJECTIVES = [
   'Amber',
@@ -72,7 +73,6 @@ const ANIMALS = [
 ] as const
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-const ONLINE_WINDOW_MS = 45_000
 export const DISCONNECT_FORFEIT_MS = 90_000
 export const DRAW_OFFER_COOLDOWN_MOVES = 8
 export const MATCHMAKING_RETENTION_MS = 24 * 60 * 60 * 1000
@@ -363,10 +363,6 @@ export function isPlayerParticipant(
   return participant?.role === 'playerOne' || participant?.role === 'playerTwo'
 }
 
-export function isOnline(lastSeenAt: number) {
-  return now() - lastSeenAt < ONLINE_WINDOW_MS
-}
-
 export function normalizeGameTimeControl(game: Pick<GameDoc, 'timeControl'>): TimeControlPreset {
   return game.timeControl ?? 'unlimited'
 }
@@ -529,35 +525,54 @@ export async function refreshClockTimeout(
 export async function refreshDisconnectForfeit(
   ctx: MutationCtx,
   gameId: Id<'games'>,
-  participant: PlayerParticipantDoc,
-  seenAt: number,
 ) {
-  const nextGeneration = (participant.disconnectForfeitGeneration ?? 0) + 1
-
-  if (participant.disconnectForfeitJobId) {
-    try {
-      await ctx.scheduler.cancel(participant.disconnectForfeitJobId)
-    } catch {
-      // The previous timeout may already have completed or been canceled.
-    }
+  const game = await ctx.db.get(gameId)
+  if (!game) {
+    return
   }
 
-  const disconnectForfeitJobId = await ctx.scheduler.runAfter(
-    DISCONNECT_FORFEIT_MS,
-    internal.games.forfeitDisconnectedPlayer,
-    {
-      gameId,
-      participantId: participant._id,
-      generation: nextGeneration,
-    },
-  )
+  const players = (await listParticipants(ctx.db, gameId)).filter(isPlayerParticipant)
+  const activeSlot = game.status === 'active' ? loadGameState(game).currentPlayer : null
+  const timestamp = now()
 
-  await ctx.db.patch(participant._id, {
-    lastSeenAt: seenAt,
-    disconnectDeadlineAt: seenAt + DISCONNECT_FORFEIT_MS,
-    disconnectForfeitGeneration: nextGeneration,
-    disconnectForfeitJobId,
-  })
+  for (const participant of players) {
+    const nextGeneration = (participant.disconnectForfeitGeneration ?? 0) + 1
+
+    if (participant.disconnectForfeitJobId) {
+      try {
+        await ctx.scheduler.cancel(participant.disconnectForfeitJobId)
+      } catch {
+        // The previous timeout may already have completed or been canceled.
+      }
+    }
+
+    const shouldTrack =
+      activeSlot !== null && requirePlayerRole(participant.role) === activeSlot
+
+    if (!shouldTrack) {
+      await ctx.db.patch(participant._id, {
+        disconnectDeadlineAt: undefined,
+        disconnectForfeitGeneration: nextGeneration,
+        disconnectForfeitJobId: undefined,
+      })
+      continue
+    }
+
+    const disconnectForfeitJobId = await ctx.scheduler.runAfter(
+      DISCONNECT_VERIFIER_MS,
+      internal.presence.verifyActivePlayerPresence,
+      {
+        gameId,
+        generation: nextGeneration,
+      },
+    )
+
+    await ctx.db.patch(participant._id, {
+      disconnectDeadlineAt: timestamp + DISCONNECT_FORFEIT_MS,
+      disconnectForfeitGeneration: nextGeneration,
+      disconnectForfeitJobId,
+    })
+  }
 }
 
 export function chooseOpeningOrder(
@@ -907,6 +922,5 @@ async function buildPlayerPresence(
   return {
     displayName: guest.displayName,
     role: participant.role === 'playerTwo' ? 'playerTwo' : 'playerOne',
-    isOnline: isOnline(participant.lastSeenAt),
   }
 }

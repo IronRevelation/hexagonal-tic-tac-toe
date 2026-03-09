@@ -118,8 +118,7 @@ export const join = mutation({
       throw new Error('Matchmaking participants were not created correctly.')
     }
 
-    await refreshDisconnectForfeit(ctx, gameId, playerOneParticipant, timestamp)
-    await refreshDisconnectForfeit(ctx, gameId, playerTwoParticipant, timestamp)
+    await refreshDisconnectForfeit(ctx, gameId)
 
     return {
       state: 'matched',

@@ -31,7 +31,7 @@ import {
   secondaryButton,
   surfacePanel,
 } from '../lib/ui'
-import { useVisibleHeartbeat } from '../lib/useVisibleHeartbeat'
+import { useGamePresence } from '../lib/useGamePresence'
 
 export const Route = createFileRoute('/games/$gameId')({
   component: GamePage,
@@ -71,8 +71,13 @@ function GamePage() {
   const deletePrivateRoom = useMutation(api.privateGames.remove)
   const liveClock = useGameClock(game?.clock ?? null)
   const canonicalTurnKey = game ? getCanonicalTurnKey(game.gameId, game.state) : null
-
-  useVisibleHeartbeat(guestToken, gameId)
+  useGamePresence(
+    guestToken,
+    gameId,
+    game?.status ?? null,
+    game?.viewerRole ?? null,
+    game?.viewerCanMove ?? null,
+  )
 
   useEffect(() => {
     if (game?.nextGameId && game.nextGameId !== game.gameId) {
@@ -394,9 +399,6 @@ function GamePage() {
       game.players.two === null)
   const viewerSlot =
     game.viewerRole === 'playerOne' ? 'one' : game.viewerRole === 'playerTwo' ? 'two' : null
-  const opponentSlot =
-    viewerSlot === 'one' ? 'two' : viewerSlot === 'two' ? 'one' : null
-  const opponentPresence = opponentSlot ? game.players[opponentSlot] : null
   const viewerRematchRequested =
     (game.viewerRole === 'playerOne' && game.rematch.requestedByPlayerOne) ||
     (game.viewerRole === 'playerTwo' && game.rematch.requestedByPlayerTwo)
@@ -425,12 +427,6 @@ function GamePage() {
     !waitingForOpponent &&
     pendingDrawOfferedBy === null &&
     remainingDrawMoves === 0
-  const opponentLeft =
-    game.status === 'finished' &&
-    viewerIsPlayer &&
-    opponentPresence !== null &&
-    !opponentPresence.isOnline &&
-    !game.nextGameId
   const clockText = liveClock?.displayText ?? null
   const isConfirmTurnGame = game.turnCommitMode === 'confirmTurn'
   const requiredSelections = isConfirmTurnGame
@@ -547,22 +543,14 @@ function GamePage() {
                 active={currentPlayer === 'one' && game.status === 'active'}
                 clockText={clockText?.one ?? null}
                 label={game.players.one?.displayName ?? PLAYER_LABELS.one}
-                note={game.players.one?.isOnline ? 'Online' : 'Offline'}
+                note={buildPlayerNote(game.status, game.players.one !== null, false)}
                 slot="one"
               />
               <PlayerCard
                 active={currentPlayer === 'two' && game.status === 'active'}
                 clockText={clockText?.two ?? null}
                 label={game.players.two?.displayName ?? PLAYER_LABELS.two}
-                note={
-                  game.players.two
-                    ? game.players.two.isOnline
-                      ? 'Online'
-                      : 'Offline'
-                    : waitingForOpponent
-                      ? 'Waiting to join'
-                      : 'Player 2'
-                }
+                note={buildPlayerNote(game.status, game.players.two !== null, waitingForOpponent)}
                 slot="two"
               />
             </div>
@@ -683,7 +671,6 @@ function GamePage() {
         pendingMoves={isConfirmTurnGame ? pendingCoords : []}
         pendingOwner={isConfirmTurnGame ? viewerSlot : null}
         state={game.state}
-        turnCommitMode={game.turnCommitMode}
       />
 
       {game.status === 'finished' ? (
@@ -705,8 +692,6 @@ function GamePage() {
                   ? `${winnerLabel ?? 'A player'} won on time.`
                 : game.finishReason === 'forfeit'
                   ? `${winnerLabel ?? 'A player'} won by forfeit.`
-                  : opponentLeft
-                ? `${opponentPresence?.displayName ?? 'The other player'} left the game.`
                 : game.nextGameId
                 ? 'Starting the rematch now.'
                 : viewerIsPlayer
@@ -717,7 +702,7 @@ function GamePage() {
               {rematchReadyCount}/2 ready for rematch
             </p>
             <div className="flex flex-wrap justify-center gap-3 max-[720px]:flex-col">
-              {viewerIsPlayer && !opponentLeft ? (
+              {viewerIsPlayer ? (
                 <button
                   className={primaryButton}
                   disabled={isUpdatingRematch || Boolean(game.nextGameId)}
@@ -914,6 +899,22 @@ function buildFinishedTitle(game: GameSnapshot, winnerLabel: string | null) {
   }
 
   return `${winnerLabel ?? 'Player'} won!`
+}
+
+function buildPlayerNote(
+  gameStatus: GameSnapshot['status'],
+  hasPlayer: boolean,
+  waitingForOpponent: boolean,
+) {
+  if (!hasPlayer) {
+    return waitingForOpponent ? 'Waiting to join' : 'Player 2'
+  }
+
+  if (gameStatus !== 'active') {
+    return gameStatus === 'waiting' ? 'Ready' : 'Finished'
+  }
+
+  return 'Ready'
 }
 
 function buildShareLink(roomCode: string) {

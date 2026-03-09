@@ -2,7 +2,7 @@
 
 Real-time multiplayer hexagonal tic-tac-toe built with TanStack Start, React 19, Tailwind CSS v4, and Convex.
 
-The app supports anonymous guest play, public matchmaking, private rooms, spectators, rematches, draw offers, chess-style room clocks, and disconnect-aware presence.
+The app supports anonymous guest play, public matchmaking, private rooms, spectators, rematches, draw offers, chess-style room clocks, and Upstash-backed disconnect detection for active turns.
 
 ## Game Rules
 
@@ -20,7 +20,7 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 - Direct join links at `/join/<ROOM_CODE>`.
 - Spectator support for full private rooms.
 - Resume flow for the latest active game tied to the current guest.
-- Real-time board state, move history, turn state, and participant presence through Convex.
+- Real-time board state, move history, and turn state through Convex, plus Upstash-backed disconnect detection for the active player.
 - Chess-style clocks for timed private rooms.
 - Pannable, zoomable infinite hex board.
 - Draw offers with cooldown enforcement.
@@ -39,8 +39,8 @@ The app supports anonymous guest play, public matchmaking, private rooms, specta
 - Joining a full private room makes the guest a spectator.
 - Finished private rooms do not accept new spectators.
 - Games can end by line completion, forfeit, timeout, or draw agreement.
-- The client sends a presence heartbeat every 10 seconds while the tab is visible.
-- A disconnected active player forfeits after 90 seconds away.
+- Active-player disconnect detection is tracked outside Convex to avoid database churn.
+- An active player may forfeit after 90 seconds if they stop actively viewing the game during their turn.
 
 ## Tech Stack
 
@@ -97,6 +97,9 @@ Expected local environment variables:
 CONVEX_DEPLOYMENT=...
 VITE_CONVEX_URL=...
 VITE_CONVEX_SITE_URL=...
+UPSTASH_REDIS_REST_URL=...
+UPSTASH_REDIS_REST_TOKEN=...
+PRESENCE_TOKEN_SECRET=...
 ```
 
 ### Start the app
@@ -122,7 +125,7 @@ Current tests cover:
 
 - shared hex game rules
 - backend helper behavior
-- visible-tab heartbeat behavior
+- shared presence state helpers
 
 ## Backend Notes
 
@@ -130,7 +133,8 @@ Current tests cover:
 - [`convex/matchmaking.ts`](./convex/matchmaking.ts) handles public queueing and match creation.
 - [`convex/privateGames.ts`](./convex/privateGames.ts) handles private room creation, joining, spectators, and room deletion.
 - [`convex/games.ts`](./convex/games.ts) handles moves, draws, forfeits, resume logic, and rematches.
-- [`convex/guests.ts`](./convex/guests.ts) manages guest identities, sessions, heartbeats, and cleanup for finished games.
+- [`convex/guests.ts`](./convex/guests.ts) manages guest identities, sessions, and cleanup for finished games.
+- [`convex/presence.ts`](./convex/presence.ts) verifies active-player presence loss before auto-forfeits.
 
 ## Notes
 

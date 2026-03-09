@@ -12,7 +12,6 @@ import {
   buildTimeoutGamePatch,
   clearDrawOfferFields,
   createStoredInitialState,
-  DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
   type GameDoc,
@@ -245,6 +244,8 @@ export const placeMove = mutation({
       )
     }
 
+    await refreshDisconnectForfeit(ctx, game._id)
+
     return {
       ok: true,
       winner: nextState.winner,
@@ -369,6 +370,8 @@ export const confirmTurn = mutation({
       )
     }
 
+    await refreshDisconnectForfeit(ctx, game._id)
+
     return {
       ok: true,
       winner: nextState.winner,
@@ -415,52 +418,7 @@ export const forfeitGame = mutation({
       await refreshClockTimeout(ctx, game, null)
     }
 
-    return { ok: true }
-  },
-})
-
-export const forfeitDisconnectedPlayer = internalMutation({
-  args: {
-    gameId: v.id('games'),
-    participantId: v.id('gameParticipants'),
-    generation: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const game = await ctx.db.get(args.gameId)
-    if (!game || game.status !== 'active') {
-      return { ok: true }
-    }
-
-    const participant = await ctx.db.get(args.participantId)
-    if (!participant || participant.gameId !== game._id || !isPlayerParticipant(participant)) {
-      return { ok: true }
-    }
-    if ((participant.disconnectForfeitGeneration ?? 0) !== args.generation) {
-      return { ok: true }
-    }
-
-    const timestamp = now()
-    if (timestamp - participant.lastSeenAt < DISCONNECT_FORFEIT_MS) {
-      return { ok: true }
-    }
-
-    const state = loadGameState(game)
-    const resolvedClock = resolveTimedGameClock(game, state.currentPlayer, timestamp)
-    await ctx.db.patch(
-      game._id,
-      {
-        ...buildForfeitGamePatch(requirePlayerRole(participant.role), timestamp),
-        ...buildResolvedClockPatch(resolvedClock, null, timestamp),
-      },
-    )
-    await ctx.db.patch(participant._id, {
-      disconnectDeadlineAt: undefined,
-      disconnectForfeitJobId: undefined,
-    })
-
-    if (normalizeGameTimeControl(game) !== 'unlimited') {
-      await refreshClockTimeout(ctx, game, null)
-    }
+    await refreshDisconnectForfeit(ctx, game._id)
 
     return { ok: true }
   },
@@ -502,6 +460,8 @@ export const timeoutActivePlayer = internalMutation({
         resolvedClock.remainingMs,
       ),
     )
+
+    await refreshDisconnectForfeit(ctx, game._id)
 
     return { ok: true }
   },
@@ -605,6 +565,8 @@ export const acceptDraw = mutation({
       ...buildResolvedClockPatch(resolvedClock, null, timestamp),
       ...clearDrawOfferFields(),
     })
+
+    await refreshDisconnectForfeit(ctx, game._id)
 
     return { ok: true }
   },
@@ -755,9 +717,6 @@ export const requestRematch = mutation({
       throw new Error('Rematch participants were not created correctly.')
     }
 
-    await refreshDisconnectForfeit(ctx, nextGameId, playerOneParticipant, timestamp)
-    await refreshDisconnectForfeit(ctx, nextGameId, playerTwoParticipant, timestamp)
-
     if (game.mode === 'private') {
       const participants = await listParticipants(ctx.db, game._id)
       for (const spectator of participants) {
@@ -774,6 +733,8 @@ export const requestRematch = mutation({
         })
       }
     }
+
+    await refreshDisconnectForfeit(ctx, nextGameId)
 
     return {
       nextGameId,
@@ -836,6 +797,7 @@ async function ensureGameHasTimeRemaining(
       ),
     )
     await refreshClockTimeout(ctx, game, null)
+    await refreshDisconnectForfeit(ctx, game._id)
     throwGameError('GAME_FINISHED', 'This game ended on time.')
   }
 

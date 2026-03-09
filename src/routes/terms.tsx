@@ -36,7 +36,7 @@ function TermsPage() {
           <ul className="m-0 grid gap-2 pl-5 text-[var(--sea-ink-soft)]">
             <li>Guest identities are anonymous and tied to the current device unless erased.</li>
             <li>Private room links should only be shared with people you intend to invite.</li>
-            <li>Disconnected active players may forfeit automatically after the in-app timeout.</li>
+            <li>Active players who stop actively viewing the game for too long during their turn may forfeit automatically after the in-app timeout.</li>
             <li>The service is provided on an as-is basis and may change or be removed at any time.</li>
           </ul>
         </div>

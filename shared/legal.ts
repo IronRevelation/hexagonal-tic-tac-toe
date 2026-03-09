@@ -20,13 +20,13 @@ export const PRIVACY_INFO: PrivacyInfo = {
   ],
   dataCategories: [
     'Anonymous guest identifier stored on the device and a hashed copy of that identifier on the backend.',
-    'Generated guest display name, gameplay records, room codes, participation history, and presence timestamps.',
+    'Generated guest display name, gameplay records, room codes, participation history, and short-lived active-game presence state.',
     'Infrastructure metadata handled by hosting providers such as IP address and access logs.',
   ],
   purposes: [
     'Create and maintain anonymous guest sessions.',
     'Run public matchmaking, private rooms, rematches, and spectator access.',
-    'Maintain live game state, move history, and disconnect-aware presence.',
+    'Maintain live game state, move history, and active-game disconnect detection when a player stops actively viewing the game during their turn.',
     'Handle privacy requests, security incidents, and abuse prevention.',
   ],
   rights: [
@@ -44,6 +44,12 @@ export const PRIVACY_INFO: PrivacyInfo = {
         'May process or transfer data in the United States and other regions permitted by its DPA and subprocessors list.',
     },
     {
+      name: 'Upstash',
+      purpose: 'Ephemeral Redis-based presence tracking used only for disconnect-forfeit checks.',
+      location:
+        'May process or transfer data in the United States and other regions permitted by its DPA and subprocessors list.',
+    },
+    {
       name: 'Vercel',
       purpose: 'Frontend hosting and delivery.',
       location:
@@ -53,6 +59,7 @@ export const PRIVACY_INFO: PrivacyInfo = {
   internationalTransfers: [
     'If hosting or infrastructure providers process personal data outside your country, transfers are handled under the provider data processing terms and applicable transfer safeguards.',
     'Convex states in its DPA that customer personal data may be transferred across borders, including from the EEA, Switzerland, and the UK to the United States.',
+    'Upstash states in its terms and infrastructure documentation that Redis and related services may process data in regions outside your country depending on the deployment and provider setup.',
     'Vercel states in its DPA that its primary processing facilities are in the United States and that cross-border transfers rely on its DPA transfer mechanisms, including SCC and UK transfer terms where required.',
   ],
   retention: [

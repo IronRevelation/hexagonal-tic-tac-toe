@@ -1,10 +1,10 @@
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import {
-  buildGuestSession,
   ensureGuest,
-  getGuestByToken,
   getParticipant,
+  refreshGuestLiveStatus,
+  resolveGuestProfile,
   requireGuest,
 } from './lib'
 
@@ -14,21 +14,18 @@ export const ensure = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await ensureGuest(ctx, args.guestToken)
-    return buildGuestSession(ctx.db, guest)
+    return {
+      displayName: guest.displayName,
+    }
   },
 })
 
-export const session = query({
+export const profile = query({
   args: {
     guestToken: v.string(),
   },
   handler: async (ctx, args) => {
-    const guest = await getGuestByToken(ctx.db, args.guestToken)
-    if (!guest) {
-      return null
-    }
-
-    return buildGuestSession(ctx.db, guest)
+    return resolveGuestProfile(ctx.db, args.guestToken)
   },
 })
 
@@ -48,6 +45,7 @@ export const leaveFinishedGame = mutation({
     await ctx.db.patch(participant._id, {
       lastSeenAt: 0,
     })
+    await refreshGuestLiveStatus(ctx.db, guest)
 
     return { ok: true }
   },

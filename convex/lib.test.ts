@@ -11,13 +11,16 @@ import {
   buildTimeoutGamePatch,
   canCreatePrivateRoom,
   canDeletePrivateRoom,
+  clearLegacyGameStateFields,
   compareHistoryEntries,
   clearDrawOfferFields,
   createStoredInitialState,
   DISCONNECT_FORFEIT_MS,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
+  ensureGameStateRecord,
   findAvailableMatchmakingOpponent,
+  getLegacyGameStateFields,
   isValidGuestToken,
   normalizeGameTimeControl,
   normalizeTurnCommitMode,
@@ -837,5 +840,203 @@ describe('draw offer helpers', () => {
 
     expect(opponent).toBe(liveQueueEntry)
     expect(deletedQueueEntryIds).toEqual(['queue_stale'])
+  })
+})
+
+describe('game state migration helpers', () => {
+  class FakeWriter {
+    private records = new Map<string, Record<string, unknown>>()
+
+    constructor(seed: Array<{ table: string; doc: Record<string, unknown> }>) {
+      for (const { doc } of seed) {
+        this.records.set(String(doc._id), { ...doc })
+      }
+    }
+
+    async get(id: string) {
+      return this.records.get(String(id)) ?? null
+    }
+
+    async insert(table: string, value: Record<string, unknown>) {
+      const id = `${table}_${this.records.size + 1}`
+      this.records.set(id, { _id: id, ...value })
+      return id
+    }
+
+    async patch(id: string, value: Record<string, unknown>) {
+      const current = this.records.get(String(id))
+      if (!current) {
+        throw new Error(`Missing record ${id}`)
+      }
+
+      this.records.set(String(id), { ...current, ...value })
+    }
+
+    query(table: string) {
+      return {
+        withIndex: (
+          index: string,
+          builder: (query: { eq: (field: string, value: unknown) => unknown }) => unknown,
+        ) => {
+          const filters: Array<{ field: string; value: unknown }> = []
+          const query = {
+            eq(field: string, value: unknown) {
+              filters.push({ field, value })
+              return query
+            },
+          }
+          builder(query)
+          const filtered = Array.from(this.records.values()).filter((record) => {
+            if (!String(record._id).startsWith(`${table}_`)) {
+              return false
+            }
+
+            return filters.every(({ field, value }) => record[field] === value)
+          })
+
+          return {
+            unique: async () => {
+              if (table === 'gameStates') {
+                expect(index).toBe('by_gameId')
+              }
+              return filtered[0] ?? null
+            },
+          }
+        },
+      }
+    }
+
+    findOne(table: string) {
+      return Array.from(this.records.values()).find((record) =>
+        String(record._id).startsWith(`${table}_`),
+      ) ?? null
+    }
+  }
+
+  it('extracts legacy state fields from a games row', () => {
+    const serializedState = createStoredInitialState()
+    const game = {
+      _id: 'games_1',
+      serializedState,
+      winnerSlot: 'one',
+      finishReason: 'line',
+      turnCommitMode: 'confirmTurn',
+      playerOneTimeRemainingMs: 50_000,
+      playerTwoTimeRemainingMs: 49_000,
+      turnStartedAt: 321,
+      clockTimeoutGeneration: 4,
+      clockTimeoutJobId: 'job_1',
+      drawOfferedBy: 'two',
+      drawOfferedAtMoveIndex: 8,
+      nextDrawOfferMoveIndexPlayerOne: 15,
+      nextDrawOfferMoveIndexPlayerTwo: 16,
+      updatedAt: 500,
+    } as {
+      serializedState: ReturnType<typeof createStoredInitialState>
+    }
+
+    expect(getLegacyGameStateFields(game as never)).toMatchObject({
+      serializedState,
+      winnerSlot: 'one',
+      finishReason: 'line',
+      turnCommitMode: 'confirmTurn',
+      playerOneTimeRemainingMs: 50_000,
+      playerTwoTimeRemainingMs: 49_000,
+      turnStartedAt: 321,
+      clockTimeoutGeneration: 4,
+      clockTimeoutJobId: 'job_1',
+      drawOfferedBy: 'two',
+      drawOfferedAtMoveIndex: 8,
+      nextDrawOfferMoveIndexPlayerOne: 15,
+      nextDrawOfferMoveIndexPlayerTwo: 16,
+      updatedAt: 500,
+    })
+  })
+
+  it('backfills a missing gameStates row from legacy game fields', async () => {
+    const db = new FakeWriter([
+      {
+        table: 'games',
+        doc: {
+          _id: 'games_1',
+          serializedState: createStoredInitialState(),
+          turnCommitMode: 'confirmTurn',
+          updatedAt: 100,
+        },
+      },
+    ])
+
+    const game = (await db.get('games_1')) as {
+      _id: string
+      serializedState: ReturnType<typeof createStoredInitialState>
+      turnCommitMode: 'confirmTurn'
+      updatedAt: number
+    }
+    const stateRecord = await ensureGameStateRecord(db as never, game as never)
+
+    expect(stateRecord).toMatchObject({
+      gameId: 'games_1',
+      serializedState: game.serializedState,
+      turnCommitMode: 'confirmTurn',
+      updatedAt: 100,
+    })
+    expect(db.findOne('gameStates')).toMatchObject({
+      gameId: 'games_1',
+      turnCommitMode: 'confirmTurn',
+    })
+  })
+
+  it('repairs a gameStates row missing turnCommitMode', async () => {
+    const db = new FakeWriter([
+      {
+        table: 'games',
+        doc: {
+          _id: 'games_1',
+          serializedState: createStoredInitialState(),
+          turnCommitMode: 'confirmTurn',
+          updatedAt: 100,
+        },
+      },
+      {
+        table: 'gameStates',
+        doc: {
+          _id: 'gameStates_1',
+          gameId: 'games_1',
+          serializedState: createStoredInitialState(),
+          updatedAt: 100,
+        },
+      },
+    ])
+
+    const game = (await db.get('games_1')) as {
+      _id: string
+      serializedState: ReturnType<typeof createStoredInitialState>
+      turnCommitMode: 'confirmTurn'
+      updatedAt: number
+    }
+    const stateRecord = await ensureGameStateRecord(db as never, game as never)
+
+    expect(stateRecord.turnCommitMode).toBe('confirmTurn')
+    await expect(db.get('gameStates_1')).resolves.toMatchObject({
+      turnCommitMode: 'confirmTurn',
+    })
+  })
+
+  it('clears legacy state fields from games after rollout', () => {
+    expect(clearLegacyGameStateFields()).toEqual({
+      playerOneTimeRemainingMs: undefined,
+      playerTwoTimeRemainingMs: undefined,
+      turnStartedAt: undefined,
+      clockTimeoutGeneration: undefined,
+      clockTimeoutJobId: undefined,
+      turnCommitMode: undefined,
+      serializedState: undefined,
+      winnerSlot: undefined,
+      finishReason: undefined,
+      drawOfferedBy: undefined,
+      drawOfferedAtMoveIndex: undefined,
+      nextDrawOfferMoveIndexPlayerOne: undefined,
+      nextDrawOfferMoveIndexPlayerTwo: undefined,
+    })
   })
 })

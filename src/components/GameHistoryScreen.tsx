@@ -1,5 +1,5 @@
-import { Suspense, type ReactNode } from 'react'
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ChevronLeft,
@@ -14,6 +14,7 @@ import type {
   GameHistoryResult,
   GameReplayData,
   GameReplayMove,
+  HistoryPage,
 } from '../../shared/contracts'
 import {
   PLAYER_MARKS,
@@ -21,7 +22,7 @@ import {
   serializeGameState,
 } from '../../shared/hexGame'
 import { useGuestSession } from '../lib/GuestSessionProvider'
-import { historyQueryOptions, replayQueryOptions } from '../lib/historyQueries'
+import { historyPageQueryOptions, replayQueryOptions } from '../lib/historyQueries'
 import { useGameReplay } from '../lib/useGameReplay'
 import {
   cn,
@@ -55,26 +56,18 @@ export default function GameHistoryScreen({
     <main className={`${pageWrap} px-4 py-8 max-[720px]:px-2 max-[720px]:py-5`}>
       <section className="grid gap-4 min-[1080px]:grid-cols-[19rem_minmax(0,1fr)]">
         {guestToken ? (
-          <Suspense
-            fallback={
-              <HistoryListPanel
-                entries={[]}
-                hasGuestToken
-                isLoading
-                selectedGameId={selectedGameId}
-              />
-            }
-          >
-            <HistoryListPanelLoader
-              guestToken={guestToken}
-              selectedGameId={selectedGameId}
-            />
-          </Suspense>
+          <HistoryListPanelLoader
+            guestToken={guestToken}
+            selectedGameId={selectedGameId}
+          />
         ) : (
           <HistoryListPanel
             entries={[]}
             hasGuestToken={false}
             isLoading={false}
+            isLoadingMore={false}
+            canLoadMore={false}
+            onLoadMore={() => undefined}
             selectedGameId={selectedGameId}
           />
         )}
@@ -94,13 +87,44 @@ function HistoryListPanelLoader({
   guestToken: string
   selectedGameId: string | null
 }) {
-  const { data: entries } = useSuspenseQuery(historyQueryOptions(guestToken))
+  const queryClient = useQueryClient()
+  const historyPage = useQuery(historyPageQueryOptions(guestToken, null))
+  const [extraPages, setExtraPages] = useState<HistoryPage[]>([])
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+
+  useEffect(() => {
+    setExtraPages([])
+    setIsLoadingMore(false)
+  }, [guestToken])
+
+  const loadedPages = historyPage.data ? [historyPage.data, ...extraPages] : extraPages
+  const entries = loadedPages.flatMap((page) => page.items)
+  const lastPage = loadedPages[loadedPages.length - 1] ?? null
+
+  async function handleLoadMore() {
+    if (!lastPage?.hasMore || !lastPage.nextCursor || isLoadingMore) {
+      return
+    }
+
+    setIsLoadingMore(true)
+    try {
+      const nextPage = await queryClient.fetchQuery(
+        historyPageQueryOptions(guestToken, lastPage.nextCursor),
+      )
+      setExtraPages((current) => [...current, nextPage])
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
 
   return (
     <HistoryListPanel
       entries={entries}
       hasGuestToken={true}
-      isLoading={false}
+      isLoading={historyPage.isLoading}
+      isLoadingMore={isLoadingMore}
+      canLoadMore={Boolean(lastPage?.hasMore && lastPage.nextCursor)}
+      onLoadMore={() => void handleLoadMore()}
       selectedGameId={selectedGameId}
     />
   )
@@ -110,11 +134,17 @@ function HistoryListPanel({
   entries,
   hasGuestToken,
   isLoading,
+  isLoadingMore,
+  canLoadMore,
+  onLoadMore,
   selectedGameId,
 }: {
   entries: GameHistoryEntry[]
   hasGuestToken: boolean
   isLoading: boolean
+  isLoadingMore: boolean
+  canLoadMore: boolean
+  onLoadMore: () => void
   selectedGameId: string | null
 }) {
   return (
@@ -176,6 +206,16 @@ function HistoryListPanel({
               </Link>
             )
           })}
+          {canLoadMore ? (
+            <button
+              className={secondaryButton}
+              disabled={isLoadingMore}
+              onClick={onLoadMore}
+              type="button"
+            >
+              {isLoadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          ) : null}
         </div>
       )}
     </section>
@@ -216,11 +256,7 @@ function ReplayPanelShell({
     )
   }
 
-  return (
-    <Suspense fallback={<ReplayPanelLoading />}>
-      <ReplayPanelLoader guestToken={guestToken} selectedGameId={selectedGameId} />
-    </Suspense>
-  )
+  return <ReplayPanelLoader guestToken={guestToken} selectedGameId={selectedGameId} />
 }
 
 function ReplayPanelLoading() {
@@ -241,9 +277,14 @@ function ReplayPanelLoader({
   guestToken: string
   selectedGameId: string
 }) {
-  const { data: replay } = useSuspenseQuery(
+  const { data: replay, isLoading } = useQuery(
     replayQueryOptions(guestToken, selectedGameId),
   )
+
+  if (isLoading) {
+    return <ReplayPanelLoading />
+  }
+
   if (!replay) {
     return (
       <section className={`${surfacePanel} grid min-h-[38rem] place-items-center rounded-[1.7rem] p-5 max-[720px]:min-h-[20rem] max-[720px]:rounded-[1.35rem]`}>

@@ -11,13 +11,18 @@ import { readPresenceRecord } from '../shared/upstashPresence'
 import {
   buildForfeitGamePatch,
   buildResolvedClockPatch,
+  buildClockStateFields,
+  ensureGameStateRecord,
   isPlayerParticipant,
-  loadGameState,
+  loadSerializedGameState,
   normalizeGameTimeControl,
   now,
   refreshClockTimeout,
+  refreshGuestLiveStatus,
+  requireGameStateFields,
   requirePlayerRole,
   resolveTimedGameClock,
+  listParticipants,
 } from './lib'
 
 function requireUpstashConfig() {
@@ -44,7 +49,8 @@ export const getActivePresenceTarget = internalQuery({
       return null
     }
 
-    const state = loadGameState(game)
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    const state = loadSerializedGameState(stateFields)
     const participants = await ctx.db
       .query('gameParticipants')
       .withIndex('by_gameId', (query) => query.eq('gameId', game._id))
@@ -155,18 +161,41 @@ export const forfeitActivePlayerForPresenceLoss = internalMutation({
     }
 
     const timestamp = now()
-    const state = loadGameState(game)
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    const state = loadSerializedGameState(stateFields)
     const participantSlot = requirePlayerRole(participant.role)
 
     if (participantSlot !== state.currentPlayer) {
       return { ok: false }
     }
 
-    const resolvedClock = resolveTimedGameClock(game, state.currentPlayer, timestamp)
-    await ctx.db.patch(game._id, {
+    const resolvedClock = resolveTimedGameClock(
+      buildClockStateFields(game, stateFields),
+      state.currentPlayer,
+      timestamp,
+    )
+    const stateRecord = await ensureGameStateRecord(ctx.db, game)
+    const patch = {
       ...buildForfeitGamePatch(participantSlot, timestamp),
       ...buildResolvedClockPatch(resolvedClock, null, timestamp),
-    })
+    }
+    await Promise.all([
+      ctx.db.patch(game._id, {
+        status: patch.status,
+        finishedAt: patch.finishedAt,
+        updatedAt: patch.updatedAt,
+      }),
+      ctx.db.patch(stateRecord._id, {
+        winnerSlot: patch.winnerSlot,
+        finishReason: patch.finishReason,
+        playerOneTimeRemainingMs: patch.playerOneTimeRemainingMs,
+        playerTwoTimeRemainingMs: patch.playerTwoTimeRemainingMs,
+        turnStartedAt: patch.turnStartedAt,
+        drawOfferedBy: patch.drawOfferedBy,
+        drawOfferedAtMoveIndex: patch.drawOfferedAtMoveIndex,
+        updatedAt: patch.updatedAt,
+      }),
+    ])
     await ctx.db.patch(participant._id, {
       disconnectDeadlineAt: undefined,
       disconnectForfeitGeneration: args.expectedGeneration + 1,
@@ -175,6 +204,18 @@ export const forfeitActivePlayerForPresenceLoss = internalMutation({
 
     if (normalizeGameTimeControl(game) !== 'unlimited') {
       await refreshClockTimeout(ctx, game, null)
+    }
+
+    const participants = await listParticipants(ctx.db, game._id)
+    const guests = await Promise.all(
+      Array.from(new Set(participants.map((entry) => entry.guestId))).map((guestId) =>
+        ctx.db.get(guestId),
+      ),
+    )
+    for (const guestDoc of guests) {
+      if (guestDoc) {
+        await refreshGuestLiveStatus(ctx.db, guestDoc)
+      }
     }
 
     return { ok: true }

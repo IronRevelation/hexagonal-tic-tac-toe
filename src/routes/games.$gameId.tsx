@@ -3,11 +3,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Check, Copy, Flag, Handshake, Trash2 } from 'lucide-react'
 import { api } from '../../convex/_generated/api'
-import type {
-  LiveGameCoreSnapshot,
-  LiveGameRoomSnapshot,
-  PrivateLobbySnapshot,
-} from '../../shared/contracts'
+import type { LiveGameSnapshot } from '../../shared/contracts'
 import { PLAYER_LABELS, type HexCoord, type PlayerSlot } from '../../shared/hexGame'
 import HexBoard from '../components/HexBoard'
 import { useGuestSession } from '../lib/GuestSessionProvider'
@@ -41,11 +37,6 @@ export const Route = createFileRoute('/games/$gameId')({
   component: GamePage,
 })
 
-type LiveGamePageData = LiveGameCoreSnapshot &
-  LiveGameRoomSnapshot & {
-    privateLobby: PrivateLobbySnapshot | null
-  }
-
 function GamePage() {
   const navigate = useNavigate()
   const { gameId } = Route.useParams()
@@ -68,35 +59,10 @@ function GamePage() {
   const [isLeavingGame, setIsLeavingGame] = useState(false)
   const [pendingCoords, setPendingCoords] = useState<HexCoord[]>([])
   const [pendingTurnKey, setPendingTurnKey] = useState<string | null>(null)
-  const gameCore = useQuery(
-    api.games.liveCoreByIdForGuest,
+  const game = useQuery(
+    api.games.liveByIdForGuest,
     guestToken ? { guestToken, gameId: asGameId(gameId) } : 'skip',
   )
-  const gameRoom = useQuery(
-    api.games.liveRoomByIdForGuest,
-    guestToken ? { guestToken, gameId: asGameId(gameId) } : 'skip',
-  )
-  const shouldLoadPrivateLobby = Boolean(
-    guestToken &&
-      gameCore &&
-      gameRoom &&
-      gameCore.status === 'waiting' &&
-      gameRoom.mode === 'private',
-  )
-  const privateLobbySnapshot = useQuery(
-    api.games.livePrivateLobbyByIdForGuest,
-    shouldLoadPrivateLobby && guestToken
-      ? { guestToken, gameId: asGameId(gameId) }
-      : 'skip',
-  )
-  const game: LiveGamePageData | null =
-    gameCore && gameRoom
-      ? {
-          ...gameCore,
-          ...gameRoom,
-          privateLobby: privateLobbySnapshot ?? null,
-        }
-      : null
   const placeMove = useMutation(api.games.placeMove)
   const confirmTurn = useMutation(api.games.confirmTurn)
   const requestRematch = useMutation(api.games.requestRematch)
@@ -110,14 +76,14 @@ function GamePage() {
   const startPrivateGame = useMutation(api.privateGames.start)
   const swapPrivateOpponent = useMutation(api.privateGames.swapOpponent)
   const leavePrivateLobby = useMutation(api.privateGames.leaveLobby)
-  const liveClock = useGameClock(gameCore?.clock ?? null)
+  const liveClock = useGameClock(game?.clock ?? null)
   const canonicalTurnKey = game ? getCanonicalTurnKey(game.gameId, game.state) : null
   useGamePresence(
     guestToken,
     gameId,
-    gameCore?.status ?? null,
-    gameCore?.viewerRole ?? null,
-    gameCore?.viewerCanMove ?? null,
+    game?.status ?? null,
+    game?.viewerRole ?? null,
+    game?.viewerCanMove ?? null,
   )
 
   useEffect(() => {
@@ -456,10 +422,7 @@ function GamePage() {
 
   if (
     isGuestLoading ||
-    (guestToken !== null &&
-      (gameCore === undefined ||
-        gameRoom === undefined ||
-        (shouldLoadPrivateLobby && privateLobbySnapshot === undefined)))
+    (guestToken !== null && game === undefined)
   ) {
     return (
       <main className={`${pageWrap} px-4 py-16`}>
@@ -473,7 +436,7 @@ function GamePage() {
     )
   }
 
-  if (gameCore === null || gameRoom === null || !game) {
+  if (game === null || !game) {
     return (
       <main className={`${pageWrap} px-4 py-16`}>
         <section
@@ -1131,12 +1094,12 @@ function LobbyParticipantRow({
   )
 }
 
-function describePlayer(game: Pick<LiveGamePageData, 'players'>, slot: PlayerSlot) {
+function describePlayer(game: Pick<LiveGameSnapshot, 'players'>, slot: PlayerSlot) {
   return game.players[slot]?.displayName ?? PLAYER_LABELS[slot]
 }
 
 function buildTurnCopy(
-  game: Pick<LiveGamePageData, 'finishReason' | 'privateLobby' | 'status'>,
+  game: Pick<LiveGameSnapshot, 'finishReason' | 'privateLobby' | 'status'>,
   currentPlayerLabel: string,
   winnerLabel: string | null,
 ) {
@@ -1170,7 +1133,7 @@ function buildTurnCopy(
 }
 
 function buildFinishedTitle(
-  game: Pick<LiveGamePageData, 'finishReason'>,
+  game: Pick<LiveGameSnapshot, 'finishReason'>,
   winnerLabel: string | null,
 ) {
   if (game.finishReason === 'drawAgreement') {
@@ -1185,7 +1148,7 @@ function buildFinishedTitle(
 }
 
 function buildPlayerNote(
-  gameStatus: LiveGameCoreSnapshot['status'],
+  gameStatus: LiveGameSnapshot['status'],
   hasPlayer: boolean,
   waitingForOpponent: boolean,
 ) {

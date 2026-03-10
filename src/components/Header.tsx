@@ -1,4 +1,6 @@
+import { useQuery } from 'convex/react'
 import { Link, useRouterState } from '@tanstack/react-router'
+import { api } from '../../convex/_generated/api'
 import { useGuestSession } from '../lib/GuestSessionProvider'
 import {
   guestChip,
@@ -8,10 +10,14 @@ import {
 } from '../lib/ui'
 
 export default function Header() {
-  const { session } = useGuestSession()
+  const { guestToken } = useGuestSession()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
+  const profile = useQuery(
+    api.guests.profile,
+    pathname.startsWith('/games/') || !guestToken ? 'skip' : { guestToken },
+  )
 
   if (pathname.startsWith('/games/')) {
     return null
@@ -64,7 +70,7 @@ export default function Header() {
 
         <div className="flex items-center justify-self-end gap-[0.8rem] max-[820px]:justify-self-stretch max-[720px]:hidden">
           <span className={guestChip}>
-            {session ? `Guest: ${session.displayName}` : 'Guest created on first game'}
+            {profile ? `Guest: ${profile.displayName}` : 'Guest created on first game'}
           </span>
         </div>
       </nav>

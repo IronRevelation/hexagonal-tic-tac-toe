@@ -14,6 +14,7 @@ import {
   listParticipants,
   now,
   refreshDisconnectForfeit,
+  refreshGuestLiveStatus,
   requireGuest,
   throwGameError,
   type GuestDoc,
@@ -52,15 +53,19 @@ export const create = mutation({
       mode: 'private',
       status: 'waiting',
       timeControl: args.timeControl,
-      turnCommitMode: args.turnCommitMode,
       createdByGuestId: guest._id,
       playerOneGuestId: guest._id,
-      playerOneTimeRemainingMs: initialClockMs ?? undefined,
-      playerTwoTimeRemainingMs: initialClockMs ?? undefined,
-      serializedState: createStoredInitialState(),
       updatedAt: timestamp,
       rematchRequestedByPlayerOne: false,
       rematchRequestedByPlayerTwo: false,
+    })
+    await ctx.db.insert('gameStates', {
+      gameId,
+      turnCommitMode: args.turnCommitMode,
+      serializedState: createStoredInitialState(),
+      playerOneTimeRemainingMs: initialClockMs ?? undefined,
+      playerTwoTimeRemainingMs: initialClockMs ?? undefined,
+      updatedAt: timestamp,
       nextDrawOfferMoveIndexPlayerOne: 0,
       nextDrawOfferMoveIndexPlayerTwo: 0,
     })
@@ -78,6 +83,7 @@ export const create = mutation({
       joinedAt: timestamp,
       lastSeenAt: timestamp,
     })
+    await refreshGuestLiveStatus(ctx.db, guest)
 
     return {
       gameId,
@@ -165,8 +171,16 @@ export const remove = mutation({
     for (const move of moves) {
       await ctx.db.delete(move._id)
     }
+    const gameState = await ctx.db
+      .query('gameStates')
+      .withIndex('by_gameId', (query) => query.eq('gameId', game._id))
+      .unique()
+    if (gameState) {
+      await ctx.db.delete(gameState._id)
+    }
 
     await ctx.db.delete(game._id)
+    await refreshGuestLiveStatus(ctx.db, guest)
 
     return { ok: true }
   },
@@ -229,6 +243,7 @@ export async function joinPrivateGame(
     await ctx.db.patch(game._id, {
       updatedAt: timestamp,
     })
+    await refreshGuestLiveStatus(ctx.db, guest)
 
     return {
       gameId: game._id,
@@ -247,6 +262,7 @@ export async function joinPrivateGame(
   await ctx.db.patch(game._id, {
     updatedAt: timestamp,
   })
+  await refreshGuestLiveStatus(ctx.db, guest)
 
   return {
     gameId: game._id,
@@ -329,6 +345,16 @@ export async function startPrivateGame(
   })
 
   await refreshDisconnectForfeit(ctx, game._id)
+  const [playerOneGuest, playerTwoGuest] = await Promise.all([
+    ctx.db.get(openingOrder.playerOneGuestId),
+    ctx.db.get(openingOrder.playerTwoGuestId),
+  ])
+  if (playerOneGuest) {
+    await refreshGuestLiveStatus(ctx.db, playerOneGuest)
+  }
+  if (playerTwoGuest) {
+    await refreshGuestLiveStatus(ctx.db, playerTwoGuest)
+  }
 
   return { ok: true }
 }
@@ -386,6 +412,17 @@ export async function swapPrivateGameOpponent(
   await ctx.db.patch(game._id, {
     updatedAt: timestamp,
   })
+  const [currentOpponentGuest, spectatorGuest] = await Promise.all([
+    ctx.db.get(currentOpponent.guestId),
+    ctx.db.get(spectator.guestId),
+  ])
+  await refreshGuestLiveStatus(ctx.db, guest)
+  if (currentOpponentGuest) {
+    await refreshGuestLiveStatus(ctx.db, currentOpponentGuest)
+  }
+  if (spectatorGuest) {
+    await refreshGuestLiveStatus(ctx.db, spectatorGuest)
+  }
 
   return { ok: true }
 }
@@ -432,6 +469,13 @@ export async function leavePrivateGameLobby(
   await ctx.db.patch(game._id, {
     updatedAt: timestamp,
   })
+  await refreshGuestLiveStatus(ctx.db, guest)
+  if (replacementOpponent) {
+    const replacementGuest = await ctx.db.get(replacementOpponent.guestId)
+    if (replacementGuest) {
+      await refreshGuestLiveStatus(ctx.db, replacementGuest)
+    }
+  }
 
   return { ok: true }
 }

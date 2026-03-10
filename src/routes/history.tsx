@@ -1,6 +1,6 @@
 import { Outlet, createFileRoute } from '@tanstack/react-router'
 import { getClientStoredGuestToken } from '../lib/GuestSessionProvider'
-import { historyQueryOptions } from '../lib/historyQueries'
+import { historyPageQueryOptions } from '../lib/historyQueries'
 
 export const Route = createFileRoute('/history')({
   preloadStaleTime: 300_000,
@@ -10,7 +10,9 @@ export const Route = createFileRoute('/history')({
       return
     }
 
-    await context.queryClient.ensureQueryData(historyQueryOptions(guestToken))
+    await context.queryClient.ensureQueryData(
+      historyPageQueryOptions(guestToken, null),
+    )
   },
   component: HistoryLayout,
 })

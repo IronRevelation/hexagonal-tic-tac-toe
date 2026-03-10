@@ -24,8 +24,10 @@ import type {
   GameMode,
   GameReplayData,
   GameStatus,
-  GuestSession,
+  GuestProfile,
+  LobbyStatusSnapshot,
   LiveGameCoreSnapshot,
+  LiveGameSnapshot,
   LiveGameRoomSnapshot,
   ParticipantRole,
   PresenceAccessSnapshot,
@@ -88,11 +90,30 @@ const GUEST_TOKEN_PATTERN =
 
 export type GuestDoc = Doc<'guests'>
 export type GameDoc = Doc<'games'>
+export type GameStateDoc = Doc<'gameStates'>
+export type GuestLiveStatusDoc = Doc<'guestLiveStatus'>
 export type ParticipantDoc = Doc<'gameParticipants'>
 export type PlayerParticipantDoc = ParticipantDoc & {
   role: 'playerOne' | 'playerTwo'
 }
 export type ResolvedTimedClock = GameClockSnapshot
+export type StoredStateDoc = NonNullable<GameDoc['serializedState']>
+export type GameStateFields = {
+  serializedState: StoredStateDoc
+  winnerSlot?: GameStateDoc['winnerSlot']
+  finishReason?: GameStateDoc['finishReason']
+  turnCommitMode?: GameStateDoc['turnCommitMode']
+  playerOneTimeRemainingMs?: GameStateDoc['playerOneTimeRemainingMs']
+  playerTwoTimeRemainingMs?: GameStateDoc['playerTwoTimeRemainingMs']
+  turnStartedAt?: GameStateDoc['turnStartedAt']
+  clockTimeoutGeneration?: GameStateDoc['clockTimeoutGeneration']
+  clockTimeoutJobId?: GameStateDoc['clockTimeoutJobId']
+  drawOfferedBy?: GameStateDoc['drawOfferedBy']
+  drawOfferedAtMoveIndex?: GameStateDoc['drawOfferedAtMoveIndex']
+  nextDrawOfferMoveIndexPlayerOne?: GameStateDoc['nextDrawOfferMoveIndexPlayerOne']
+  nextDrawOfferMoveIndexPlayerTwo?: GameStateDoc['nextDrawOfferMoveIndexPlayerTwo']
+  updatedAt: number
+}
 
 export function now() {
   return Date.now()
@@ -110,7 +131,7 @@ export function toStoredState(state: SerializedGameState) {
 }
 
 export function fromStoredState(
-  state: GameDoc['serializedState'],
+  state: StoredStateDoc,
 ): SerializedGameState {
   return {
     ...state,
@@ -124,7 +145,118 @@ export function createStoredInitialState() {
 }
 
 export function loadGameState(game: GameDoc): GameState {
+  if (!game.serializedState) {
+    throw new Error(`Game ${game._id as GenericId<'games'>} is missing legacy state.`)
+  }
+
   return deserializeGameState(fromStoredState(game.serializedState))
+}
+
+export function loadSerializedGameState(
+  stateFields: Pick<GameStateFields, 'serializedState'>,
+): GameState {
+  return deserializeGameState(fromStoredState(stateFields.serializedState))
+}
+
+export function getLegacyGameStateFields(game: GameDoc): GameStateFields | null {
+  if (!game.serializedState) {
+    return null
+  }
+
+  return {
+    serializedState: game.serializedState,
+    winnerSlot: game.winnerSlot,
+    finishReason: game.finishReason,
+    turnCommitMode: game.turnCommitMode,
+    playerOneTimeRemainingMs: game.playerOneTimeRemainingMs,
+    playerTwoTimeRemainingMs: game.playerTwoTimeRemainingMs,
+    turnStartedAt: game.turnStartedAt,
+    clockTimeoutGeneration: game.clockTimeoutGeneration,
+    clockTimeoutJobId: game.clockTimeoutJobId,
+    drawOfferedBy: game.drawOfferedBy,
+    drawOfferedAtMoveIndex: game.drawOfferedAtMoveIndex,
+    nextDrawOfferMoveIndexPlayerOne: game.nextDrawOfferMoveIndexPlayerOne,
+    nextDrawOfferMoveIndexPlayerTwo: game.nextDrawOfferMoveIndexPlayerTwo,
+    updatedAt: game.updatedAt,
+  }
+}
+
+export async function getGameState(
+  db: DatabaseReader | DatabaseWriter,
+  gameId: Id<'games'>,
+) {
+  return db
+    .query('gameStates')
+    .withIndex('by_gameId', (query) => query.eq('gameId', gameId))
+    .unique()
+}
+
+export async function resolveGameStateFields(
+  db: DatabaseReader | DatabaseWriter,
+  game: GameDoc,
+): Promise<GameStateFields | GameStateDoc | null> {
+  return (await getGameState(db, game._id)) ?? getLegacyGameStateFields(game)
+}
+
+export async function requireGameStateFields(
+  db: DatabaseReader | DatabaseWriter,
+  game: GameDoc,
+): Promise<GameStateFields | GameStateDoc> {
+  const stateFields = await resolveGameStateFields(db, game)
+  if (!stateFields) {
+    throw new Error(`Game ${game._id as GenericId<'games'>} is missing state.`)
+  }
+
+  return stateFields
+}
+
+export async function ensureGameStateRecord(
+  db: DatabaseWriter,
+  game: GameDoc,
+): Promise<GameStateDoc> {
+  const existing = await getGameState(db, game._id)
+  if (existing) {
+    const legacy = getLegacyGameStateFields(game)
+    const repairPatch: Partial<GameStateDoc> = {}
+
+    if (!(existing as { serializedState?: StoredStateDoc }).serializedState) {
+      if (!legacy?.serializedState) {
+        throw new Error(`Game ${game._id as GenericId<'games'>} is missing state.`)
+      }
+      repairPatch.serializedState = legacy.serializedState
+    }
+
+    if (!(existing as { turnCommitMode?: TurnCommitMode }).turnCommitMode) {
+      repairPatch.turnCommitMode = legacy?.turnCommitMode ?? 'instant'
+    }
+
+    if ((existing as { updatedAt?: number }).updatedAt === undefined) {
+      repairPatch.updatedAt = legacy?.updatedAt ?? game.updatedAt
+    }
+
+    if (Object.keys(repairPatch).length === 0) {
+      return existing
+    }
+
+    await db.patch(existing._id, repairPatch)
+    return {
+      ...existing,
+      ...repairPatch,
+    } as GameStateDoc
+  }
+
+  const legacy = getLegacyGameStateFields(game)
+  if (!legacy) {
+    throw new Error(`Game ${game._id as GenericId<'games'>} is missing state.`)
+  }
+
+  const gameStateId = await db.insert('gameStates', {
+    gameId: game._id,
+    ...legacy,
+    turnCommitMode: legacy.turnCommitMode ?? 'instant',
+  })
+
+  return (await db.get(gameStateId))!
 }
 
 export async function hashGuestToken(guestToken: string) {
@@ -171,6 +303,7 @@ export async function ensureGuest(
       retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
       state: 'active',
     }
+    await refreshGuestLiveStatus(ctx.db, refreshedGuest)
     return refreshedGuest
   }
 
@@ -183,7 +316,9 @@ export async function ensureGuest(
     retentionExpiresAt: getGuestRetentionExpiresAt(seenAt),
   })
 
-  return (await ctx.db.get(guestId))!
+  const guest = (await ctx.db.get(guestId))!
+  await refreshGuestLiveStatus(ctx.db, guest)
+  return guest
 }
 
 export async function requireGuest(
@@ -244,6 +379,115 @@ export async function getQueueEntry(
     .unique()
 }
 
+export async function getGuestLiveStatus(
+  db: DatabaseReader | DatabaseWriter,
+  guestId: Id<'guests'>,
+) {
+  return db
+    .query('guestLiveStatus')
+    .withIndex('by_guestId', (query) => query.eq('guestId', guestId))
+    .unique()
+}
+
+export async function findLatestActiveParticipation(
+  db: DatabaseReader | DatabaseWriter,
+  guestId: Id<'guests'>,
+) {
+  const participations = await db
+    .query('gameParticipants')
+    .withIndex('by_guestId', (query) => query.eq('guestId', guestId))
+    .collect()
+  const ordered = participations.sort((left, right) => right.joinedAt - left.joinedAt)
+
+  for (const participant of ordered) {
+    const game = await db.get(participant.gameId)
+    if (game && (game.status === 'waiting' || game.status === 'active')) {
+      return { participant, game }
+    }
+  }
+
+  return null
+}
+
+export async function refreshGuestLiveStatus(
+  db: DatabaseWriter,
+  guest: GuestDoc,
+) {
+  const [liveStatusRow, queueEntry, activeParticipation] = await Promise.all([
+    getGuestLiveStatus(db, guest._id),
+    getQueueEntry(db, guest._id),
+    findLatestActiveParticipation(db, guest._id),
+  ])
+
+  const snapshot = {
+    guestId: guest._id,
+    displayName: guest.displayName,
+    activeGameId: activeParticipation?.game._id,
+    activeRole: activeParticipation?.participant.role as ParticipantRole | undefined,
+    matchmakingState: activeParticipation
+      ? 'matched'
+      : queueEntry
+        ? 'queued'
+        : 'idle',
+    queuedAt: queueEntry?.queuedAt,
+  } as const
+
+  if (liveStatusRow) {
+    await db.patch(liveStatusRow._id, snapshot)
+    return
+  }
+
+  await db.insert('guestLiveStatus', snapshot)
+}
+
+export async function resolveGuestProfile(
+  db: DatabaseReader | DatabaseWriter,
+  guestToken: string,
+): Promise<GuestProfile | null> {
+  const guest = await getGuestByToken(db, guestToken)
+  if (!guest) {
+    return null
+  }
+
+  const liveStatus = await getGuestLiveStatus(db, guest._id)
+  return {
+    displayName: liveStatus?.displayName ?? guest.displayName,
+  }
+}
+
+export async function resolveLobbyStatus(
+  db: DatabaseReader | DatabaseWriter,
+  guestToken: string,
+): Promise<LobbyStatusSnapshot | null> {
+  const guest = await getGuestByToken(db, guestToken)
+  if (!guest) {
+    return null
+  }
+
+  const liveStatus = await getGuestLiveStatus(db, guest._id)
+  if (liveStatus) {
+    return {
+      displayName: liveStatus.displayName,
+      activeGameId: liveStatus.activeGameId ?? null,
+      activeRole: (liveStatus.activeRole as ParticipantRole | undefined) ?? null,
+      matchmakingState: liveStatus.matchmakingState,
+      queuedAt: liveStatus.queuedAt ?? null,
+    }
+  }
+
+  const queueEntry = await getQueueEntry(db, guest._id)
+  const activeParticipation = await findLatestActiveParticipation(db, guest._id)
+
+  return {
+    displayName: guest.displayName,
+    activeGameId: activeParticipation?.game._id ?? null,
+    activeRole:
+      (activeParticipation?.participant.role as ParticipantRole | undefined) ?? null,
+    matchmakingState: activeParticipation ? 'matched' : queueEntry ? 'queued' : 'idle',
+    queuedAt: queueEntry?.queuedAt ?? null,
+  }
+}
+
 export async function findAvailableMatchmakingOpponent(
   db: DatabaseReader | DatabaseWriter,
   currentGuestId: Id<'guests'>,
@@ -288,27 +532,6 @@ export async function findActivePlayerGameParticipant(
     .sort((left, right) => right.joinedAt - left.joinedAt)
 
   for (const participant of playerParticipations) {
-    const game = await db.get(participant.gameId)
-    if (game && (game.status === 'waiting' || game.status === 'active')) {
-      return { participant, game }
-    }
-  }
-
-  return null
-}
-
-export async function findLatestAccessibleGameParticipant(
-  db: DatabaseReader | DatabaseWriter,
-  guestId: Id<'guests'>,
-) {
-  const participations = await db
-    .query('gameParticipants')
-    .withIndex('by_guestId', (query) => query.eq('guestId', guestId))
-    .collect()
-
-  const ordered = participations.sort((left, right) => right.joinedAt - left.joinedAt)
-
-  for (const participant of ordered) {
     const game = await db.get(participant.gameId)
     if (game && (game.status === 'waiting' || game.status === 'active')) {
       return { participant, game }
@@ -369,7 +592,7 @@ export function normalizeGameTimeControl(game: Pick<GameDoc, 'timeControl'>): Ti
 }
 
 export function normalizeTurnCommitMode(
-  game: Pick<GameDoc, 'turnCommitMode'>,
+  game: Pick<GameStateFields, 'turnCommitMode'>,
 ): TurnCommitMode {
   return game.turnCommitMode ?? 'instant'
 }
@@ -379,10 +602,13 @@ export function resolveTimedGameClock(
     GameDoc,
     | 'status'
     | 'timeControl'
-    | 'playerOneTimeRemainingMs'
-    | 'playerTwoTimeRemainingMs'
-    | 'turnStartedAt'
-  >,
+  > &
+    Pick<
+      GameStateFields,
+      | 'playerOneTimeRemainingMs'
+      | 'playerTwoTimeRemainingMs'
+      | 'turnStartedAt'
+    >,
   currentPlayer: PlayerSlot,
   timestamp: number,
 ): ResolvedTimedClock | null {
@@ -417,6 +643,22 @@ export function resolveTimedGameClock(
     remainingMs,
     activePlayer,
     serverNow: timestamp,
+  }
+}
+
+export function buildClockStateFields(
+  game: Pick<GameDoc, 'status' | 'timeControl'>,
+  stateFields: Pick<
+    GameStateFields,
+    'playerOneTimeRemainingMs' | 'playerTwoTimeRemainingMs' | 'turnStartedAt'
+  >,
+) {
+  return {
+    status: game.status,
+    timeControl: game.timeControl,
+    playerOneTimeRemainingMs: stateFields.playerOneTimeRemainingMs,
+    playerTwoTimeRemainingMs: stateFields.playerTwoTimeRemainingMs,
+    turnStartedAt: stateFields.turnStartedAt,
   }
 }
 
@@ -473,6 +715,24 @@ export function clearDrawOfferFields() {
   }
 }
 
+export function clearLegacyGameStateFields() {
+  return {
+    playerOneTimeRemainingMs: undefined,
+    playerTwoTimeRemainingMs: undefined,
+    turnStartedAt: undefined,
+    clockTimeoutGeneration: undefined,
+    clockTimeoutJobId: undefined,
+    turnCommitMode: undefined,
+    serializedState: undefined,
+    winnerSlot: undefined,
+    finishReason: undefined,
+    drawOfferedBy: undefined,
+    drawOfferedAtMoveIndex: undefined,
+    nextDrawOfferMoveIndexPlayerOne: undefined,
+    nextDrawOfferMoveIndexPlayerTwo: undefined,
+  }
+}
+
 export function drawOfferCooldownPatch(
   slot: PlayerSlot,
   fromMoveIndex: number,
@@ -486,24 +746,34 @@ export function drawOfferCooldownPatch(
 
 export async function refreshClockTimeout(
   ctx: MutationCtx,
-  game: Pick<GameDoc, '_id' | 'clockTimeoutGeneration' | 'clockTimeoutJobId'>,
+  game: Pick<GameDoc, '_id'> &
+    Partial<Pick<GameDoc, 'clockTimeoutGeneration' | 'clockTimeoutJobId'>>,
   clock: ResolvedTimedClock | null,
 ) {
-  const nextGeneration = (game.clockTimeoutGeneration ?? 0) + 1
+  const gameState = await getGameState(ctx.db, game._id)
+  const currentGeneration =
+    gameState?.clockTimeoutGeneration ?? game.clockTimeoutGeneration ?? 0
+  const currentJobId = gameState?.clockTimeoutJobId ?? game.clockTimeoutJobId
+  const nextGeneration = currentGeneration + 1
 
-  if (game.clockTimeoutJobId) {
+  if (currentJobId) {
     try {
-      await ctx.scheduler.cancel(game.clockTimeoutJobId)
+      await ctx.scheduler.cancel(currentJobId)
     } catch {
       // The previous timeout may already have completed or been canceled.
     }
   }
 
   if (!clock || clock.activePlayer === null) {
-    await ctx.db.patch(game._id, {
+    const clearedPatch = {
       clockTimeoutGeneration: nextGeneration,
       clockTimeoutJobId: undefined,
-    })
+    }
+    if (gameState) {
+      await ctx.db.patch(gameState._id, clearedPatch)
+    } else {
+      await ctx.db.patch(game._id, clearedPatch)
+    }
     return
   }
 
@@ -517,10 +787,17 @@ export async function refreshClockTimeout(
     },
   )
 
-  await ctx.db.patch(game._id, {
-    clockTimeoutGeneration: nextGeneration,
-    clockTimeoutJobId,
-  })
+  if (gameState) {
+    await ctx.db.patch(gameState._id, {
+      clockTimeoutGeneration: nextGeneration,
+      clockTimeoutJobId,
+    })
+  } else {
+    await ctx.db.patch(game._id, {
+      clockTimeoutGeneration: nextGeneration,
+      clockTimeoutJobId,
+    })
+  }
 }
 
 export async function refreshDisconnectForfeit(
@@ -533,7 +810,11 @@ export async function refreshDisconnectForfeit(
   }
 
   const players = (await listParticipants(ctx.db, gameId)).filter(isPlayerParticipant)
-  const activeSlot = game.status === 'active' ? loadGameState(game).currentPlayer : null
+  const stateFields = await resolveGameStateFields(ctx.db, game)
+  const activeSlot =
+    game.status === 'active' && stateFields
+      ? loadSerializedGameState(stateFields).currentPlayer
+      : null
   const timestamp = now()
 
   for (const participant of players) {
@@ -624,9 +905,14 @@ export async function buildLiveGameCoreSnapshot(
     return null
   }
 
+  const stateFields = await requireGameStateFields(db, game)
   const snapshotTime = now()
-  const state = fromStoredState(game.serializedState)
-  const clock = resolveTimedGameClock(game, state.currentPlayer, snapshotTime)
+  const state = fromStoredState(stateFields.serializedState)
+  const clock = resolveTimedGameClock(
+    buildClockStateFields(game, stateFields),
+    state.currentPlayer,
+    snapshotTime,
+  )
   const viewerCanMove =
     game.status === 'active' &&
     ((viewer.role === 'playerOne' && state.currentPlayer === 'one') ||
@@ -635,12 +921,12 @@ export async function buildLiveGameCoreSnapshot(
   return {
     gameId: game._id,
     status: game.status as GameStatus,
-    finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
-    winnerSlot: game.winnerSlot ?? null,
+    finishReason: (stateFields.finishReason as GameFinishReason | undefined) ?? null,
+    winnerSlot: stateFields.winnerSlot ?? null,
     nextGameId: game.nextGameId ?? null,
     viewerRole: viewer.role as ParticipantRole,
     viewerCanMove,
-    turnCommitMode: normalizeTurnCommitMode(game),
+    turnCommitMode: normalizeTurnCommitMode(stateFields),
     state,
     clock,
     rematch: {
@@ -649,10 +935,10 @@ export async function buildLiveGameCoreSnapshot(
       nextGameId: game.nextGameId ?? null,
     },
     drawOffer: {
-      offeredBy: game.drawOfferedBy ?? null,
-      offeredAtMoveIndex: game.drawOfferedAtMoveIndex ?? null,
-      minMoveIndexForPlayerOne: game.nextDrawOfferMoveIndexPlayerOne ?? 0,
-      minMoveIndexForPlayerTwo: game.nextDrawOfferMoveIndexPlayerTwo ?? 0,
+      offeredBy: stateFields.drawOfferedBy ?? null,
+      offeredAtMoveIndex: stateFields.drawOfferedAtMoveIndex ?? null,
+      minMoveIndexForPlayerOne: stateFields.nextDrawOfferMoveIndexPlayerOne ?? 0,
+      minMoveIndexForPlayerTwo: stateFields.nextDrawOfferMoveIndexPlayerTwo ?? 0,
     } satisfies DrawOfferState,
   }
 }
@@ -710,6 +996,30 @@ export async function buildLivePrivateLobbySnapshot(
   return buildPrivateLobbySnapshot(db, game, participants, guest._id)
 }
 
+export async function buildLiveGameSnapshot(
+  db: DatabaseReader,
+  guest: GuestDoc,
+  game: GameDoc,
+): Promise<LiveGameSnapshot | null> {
+  const [core, room] = await Promise.all([
+    buildLiveGameCoreSnapshot(db, guest, game),
+    buildLiveGameRoomSnapshot(db, guest, game),
+  ])
+
+  if (!core || !room) {
+    return null
+  }
+
+  return {
+    ...core,
+    ...room,
+    privateLobby:
+      game.mode === 'private' && game.status === 'waiting'
+        ? await buildLivePrivateLobbySnapshot(db, guest, game)
+        : null,
+  }
+}
+
 export async function buildPresenceAccessSnapshot(
   db: DatabaseReader,
   guest: GuestDoc,
@@ -741,10 +1051,11 @@ export async function buildHistoryEntry(
 
   const viewerSlot = requirePlayerRole(participant.role)
   const opponentSlot = opponentOf(viewerSlot)
+  const stateFields = await requireGameStateFields(db, game)
   const opponentGuestId =
     opponentSlot === 'one' ? game.playerOneGuestId : game.playerTwoGuestId
   const opponentGuest = opponentGuestId ? await db.get(opponentGuestId) : null
-  const finishReason = (game.finishReason as GameFinishReason | undefined) ?? null
+  const finishReason = (stateFields.finishReason as GameFinishReason | undefined) ?? null
 
   return {
     gameId: game._id,
@@ -752,7 +1063,7 @@ export async function buildHistoryEntry(
     mode: game.mode as GameMode,
     timeControl: normalizeGameTimeControl(game),
     finishReason,
-    result: resolveHistoryResult(viewerSlot, game.winnerSlot ?? null, finishReason),
+    result: resolveHistoryResult(viewerSlot, stateFields.winnerSlot ?? null, finishReason),
     viewerSlot,
     opponent: opponentGuestId
       ? {
@@ -762,7 +1073,7 @@ export async function buildHistoryEntry(
       : null,
     finishedAt: game.finishedAt ?? game.updatedAt,
     updatedAt: game.updatedAt,
-    totalMoves: game.serializedState.totalMoves,
+    totalMoves: stateFields.serializedState.totalMoves,
   }
 }
 
@@ -780,7 +1091,8 @@ export async function buildReplayData(
   }
 
   const viewerSlot = requirePlayerRole(participant.role)
-  const [playerOneGuest, playerTwoGuest, moves] = await Promise.all([
+  const [stateFields, playerOneGuest, playerTwoGuest, moves] = await Promise.all([
+    requireGameStateFields(db, game),
     game.playerOneGuestId ? db.get(game.playerOneGuestId) : Promise.resolve(null),
     game.playerTwoGuestId ? db.get(game.playerTwoGuestId) : Promise.resolve(null),
     db
@@ -794,12 +1106,12 @@ export async function buildReplayData(
     seriesId: game.seriesId ?? null,
     mode: game.mode as GameMode,
     timeControl: normalizeGameTimeControl(game),
-    finishReason: (game.finishReason as GameFinishReason | undefined) ?? null,
-    winnerSlot: game.winnerSlot ?? null,
+    finishReason: (stateFields.finishReason as GameFinishReason | undefined) ?? null,
+    winnerSlot: stateFields.winnerSlot ?? null,
     viewerSlot,
     finishedAt: game.finishedAt ?? game.updatedAt,
     updatedAt: game.updatedAt,
-    turnCommitMode: normalizeTurnCommitMode(game),
+    turnCommitMode: normalizeTurnCommitMode(stateFields),
     players: {
       one: {
         displayName: playerOneGuest?.displayName ?? PLAYER_LABELS.one,
@@ -808,7 +1120,7 @@ export async function buildReplayData(
         displayName: playerTwoGuest?.displayName ?? PLAYER_LABELS.two,
       },
     },
-    finalState: fromStoredState(game.serializedState),
+    finalState: fromStoredState(stateFields.serializedState),
     moves: moves.map((move) => ({
       moveIndex: move.moveIndex,
       turnNumber: move.turnNumber,
@@ -819,19 +1131,6 @@ export async function buildReplayData(
       },
       createdAt: move.createdAt,
     })),
-  }
-}
-
-export async function buildGuestSession(
-  db: DatabaseReader,
-  guest: GuestDoc,
-): Promise<GuestSession> {
-  const active = await findLatestAccessibleGameParticipant(db, guest._id)
-
-  return {
-    displayName: guest.displayName,
-    activeGameId: active?.game._id ?? null,
-    activeRole: (active?.participant.role as ParticipantRole | undefined) ?? null,
   }
 }
 

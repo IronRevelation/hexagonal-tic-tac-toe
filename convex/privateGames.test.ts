@@ -46,7 +46,7 @@ class FakeDb {
 
     return {
       withIndex: (
-        index: string,
+        _index: string,
         builder: (query: { eq: (field: string, value: unknown) => unknown }) => unknown,
       ) => {
         const filters: Array<{ field: string; value: unknown }> = []

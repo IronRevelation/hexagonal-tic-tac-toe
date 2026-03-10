@@ -9,12 +9,16 @@ import {
   WAITING_PRIVATE_ROOM_RETENTION_MS,
   buildForfeitGamePatch,
   canDeletePrivateRoom,
+  ensureGameStateRecord,
   findActivePlayerGameParticipant,
   getQueueEntry,
+  getGuestLiveStatus,
   listGuestParticipants,
   listParticipants,
   normalizeGameTimeControl,
   now,
+  refreshGuestLiveStatus,
+  requireGameStateFields,
   requireGuest,
   requirePlayerRole,
 } from './lib'
@@ -48,6 +52,10 @@ export const exportMyData = query({
     )
     const moves = moveGroups.flat()
 
+    const gameStateFields = await Promise.all(
+      games.map((game) => requireGameStateFields(ctx.db, game)),
+    )
+
     return {
       exportedAt: now(),
       contactEmail: PRIVACY_INFO.contactEmail,
@@ -73,7 +81,7 @@ export const exportMyData = query({
         lastSeenAt: participant.lastSeenAt,
         disconnectDeadlineAt: participant.disconnectDeadlineAt ?? null,
       })),
-      games: games.map((game) => ({
+      games: games.map((game, index) => ({
         id: game._id,
         mode: game.mode,
         status: game.status,
@@ -83,8 +91,8 @@ export const exportMyData = query({
         startedAt: game.startedAt ?? null,
         finishedAt: game.finishedAt ?? null,
         updatedAt: game.updatedAt,
-        finishReason: game.finishReason ?? null,
-        winnerSlot: game.winnerSlot ?? null,
+        finishReason: gameStateFields[index]?.finishReason ?? null,
+        winnerSlot: gameStateFields[index]?.winnerSlot ?? null,
       })),
       moves: moves.map((move) => ({
         id: move._id,
@@ -129,13 +137,23 @@ export const eraseMyData = mutation({
 
     const activePlayerGame = await findActivePlayerGameParticipant(ctx.db, guest._id)
     if (activePlayerGame?.game.status === 'active') {
-      await ctx.db.patch(
-        activePlayerGame.game._id,
-        buildForfeitGamePatch(
-          requirePlayerRole(activePlayerGame.participant.role),
-          timestamp,
-        ),
+      const patch = buildForfeitGamePatch(
+        requirePlayerRole(activePlayerGame.participant.role),
+        timestamp,
       )
+      const stateRecord = await ensureGameStateRecord(ctx.db, activePlayerGame.game)
+      await ctx.db.patch(activePlayerGame.game._id, {
+        status: patch.status,
+        finishedAt: patch.finishedAt,
+        updatedAt: patch.updatedAt,
+      })
+      await ctx.db.patch(stateRecord._id, {
+        winnerSlot: patch.winnerSlot,
+        finishReason: patch.finishReason,
+        drawOfferedBy: patch.drawOfferedBy,
+        drawOfferedAtMoveIndex: patch.drawOfferedAtMoveIndex,
+        updatedAt: patch.updatedAt,
+      })
     }
 
     await ctx.db.patch(guest._id, {
@@ -145,6 +163,10 @@ export const eraseMyData = mutation({
       erasedAt: timestamp,
       retentionExpiresAt: timestamp,
     })
+    const liveStatus = await getGuestLiveStatus(ctx.db, guest._id)
+    if (liveStatus) {
+      await ctx.db.delete(liveStatus._id)
+    }
 
     return { ok: true }
   },
@@ -223,6 +245,10 @@ export const cleanupExpiredData = internalMutation({
       }
 
       await ctx.db.delete(guest._id)
+      const liveStatus = await getGuestLiveStatus(ctx.db, guest._id)
+      if (liveStatus) {
+        await ctx.db.delete(liveStatus._id)
+      }
       deletedGuests += 1
     }
 
@@ -257,6 +283,23 @@ async function deleteGameCascade(
   for (const move of moves) {
     await ctx.db.delete(move._id)
   }
+  const gameState = await ctx.db
+    .query('gameStates')
+    .withIndex('by_gameId', (query) => query.eq('gameId', game._id))
+    .unique()
+  if (gameState) {
+    await ctx.db.delete(gameState._id)
+  }
 
   await ctx.db.delete(game._id)
+  const guests = await Promise.all(
+    Array.from(new Set(participants.map((participant) => participant.guestId))).map(
+      (guestId) => ctx.db.get(guestId),
+    ),
+  )
+  for (const guestDoc of guests) {
+    if (guestDoc) {
+      await refreshGuestLiveStatus(ctx.db, guestDoc)
+    }
+  }
 }

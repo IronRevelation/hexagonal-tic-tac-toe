@@ -28,6 +28,11 @@ const participantRole = v.union(
 )
 const turnCommitMode = v.union(v.literal('instant'), v.literal('confirmTurn'))
 const guestState = v.union(v.literal('active'), v.literal('erased'))
+const lobbyMatchmakingState = v.union(
+  v.literal('idle'),
+  v.literal('queued'),
+  v.literal('matched'),
+)
 
 const hexCoord = v.object({
   q: v.number(),
@@ -75,7 +80,7 @@ export default defineSchema({
     clockTimeoutGeneration: v.optional(v.number()),
     clockTimeoutJobId: v.optional(v.id('_scheduled_functions')),
     turnCommitMode: v.optional(turnCommitMode),
-    serializedState: storedGameState,
+    serializedState: v.optional(storedGameState),
     winnerSlot: v.optional(playerSlot),
     finishReason: v.optional(gameFinishReason),
     startedAt: v.optional(v.number()),
@@ -98,6 +103,24 @@ export default defineSchema({
     .index('by_seriesId', ['seriesId'])
     .index('by_previousGameId', ['previousGameId'])
     .index('by_nextGameId', ['nextGameId']),
+
+  gameStates: defineTable({
+    gameId: v.id('games'),
+    serializedState: storedGameState,
+    winnerSlot: v.optional(playerSlot),
+    finishReason: v.optional(gameFinishReason),
+    turnCommitMode,
+    playerOneTimeRemainingMs: v.optional(v.number()),
+    playerTwoTimeRemainingMs: v.optional(v.number()),
+    turnStartedAt: v.optional(v.number()),
+    clockTimeoutGeneration: v.optional(v.number()),
+    clockTimeoutJobId: v.optional(v.id('_scheduled_functions')),
+    drawOfferedBy: v.optional(playerSlot),
+    drawOfferedAtMoveIndex: v.optional(v.number()),
+    nextDrawOfferMoveIndexPlayerOne: v.optional(v.number()),
+    nextDrawOfferMoveIndexPlayerTwo: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index('by_gameId', ['gameId']),
 
   gameMoves: defineTable({
     gameId: v.id('games'),
@@ -130,4 +153,13 @@ export default defineSchema({
   })
     .index('by_guestId', ['guestId'])
     .index('by_queuedAt', ['queuedAt']),
+
+  guestLiveStatus: defineTable({
+    guestId: v.id('guests'),
+    displayName: v.string(),
+    activeGameId: v.optional(v.id('games')),
+    activeRole: v.optional(participantRole),
+    matchmakingState: lobbyMatchmakingState,
+    queuedAt: v.optional(v.number()),
+  }).index('by_guestId', ['guestId']),
 })

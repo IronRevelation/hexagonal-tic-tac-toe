@@ -1,11 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { useMutation, useQuery } from 'convex/react'
+import { useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import type { GuestSession } from '../../shared/contracts'
 
 type GuestSessionContextValue = {
   guestToken: string | null
-  session: GuestSession | null
   isReady: boolean
   isLoading: boolean
   error: string | null
@@ -79,19 +77,6 @@ export function GuestSessionProvider({
     guestTokenRef.current = guestToken
   }, [guestToken])
 
-  const session = useQuery(
-    api.guests.session,
-    guestToken ? { guestToken } : 'skip',
-  )
-
-  useEffect(() => {
-    if (!hasLoadedStorage || isEnsuring || !guestToken || session !== null) {
-      return
-    }
-
-    clearGuestSession()
-  }, [guestToken, hasLoadedStorage, isEnsuring, session])
-
   async function ensureGuestSession() {
     if (ensureInFlightRef.current) {
       return ensureInFlightRef.current
@@ -139,12 +124,8 @@ export function GuestSessionProvider({
     <GuestSessionContext.Provider
       value={{
         guestToken,
-        session: session ?? null,
         isReady: hasLoadedStorage,
-        isLoading:
-          !hasLoadedStorage ||
-          isEnsuring ||
-          (guestToken !== null && session === undefined),
+        isLoading: !hasLoadedStorage || isEnsuring,
         error,
         ensureGuestSession,
         clearGuestSession,

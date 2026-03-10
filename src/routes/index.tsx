@@ -31,8 +31,7 @@ export const Route = createFileRoute('/')({
 
 function LobbyPage() {
   const navigate = useNavigate()
-  const { guestToken, session, isLoading, error, ensureGuestSession } =
-    useGuestSession()
+  const { guestToken, isLoading, error, ensureGuestSession } = useGuestSession()
   const [roomCode, setRoomCode] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
@@ -45,34 +44,35 @@ function LobbyPage() {
   const joinMatchmaking = useMutation(api.matchmaking.join)
   const cancelMatchmaking = useMutation(api.matchmaking.cancel)
   const createPrivateGame = useMutation(api.privateGames.create)
-  const matchmakingStatus = useQuery(
-    api.matchmaking.status,
+  const lobbyStatus = useQuery(
+    api.lobby.statusForGuest,
     guestToken ? { guestToken } : 'skip',
   )
 
   useEffect(() => {
-    if (!matchmakingStatus) {
+    if (!lobbyStatus) {
       return
     }
 
     if (
       previousMatchState.current === 'queued' &&
-      matchmakingStatus.state === 'matched'
+      lobbyStatus.matchmakingState === 'matched' &&
+      lobbyStatus.activeGameId
     ) {
       void navigate({
         to: '/games/$gameId',
-        params: { gameId: matchmakingStatus.gameId },
+        params: { gameId: lobbyStatus.activeGameId },
       })
     }
 
-    previousMatchState.current = matchmakingStatus.state
-  }, [matchmakingStatus, navigate])
+    previousMatchState.current = lobbyStatus.matchmakingState
+  }, [lobbyStatus, navigate])
 
   const isAlreadyPlaying =
-    session?.activeRole === 'playerOne' || session?.activeRole === 'playerTwo'
-  const activeGameId = session?.activeGameId ?? null
+    lobbyStatus?.activeRole === 'playerOne' || lobbyStatus?.activeRole === 'playerTwo'
+  const activeGameId = lobbyStatus?.activeGameId ?? null
   const hasActiveGame = activeGameId !== null
-  const isQueued = matchmakingStatus?.state === 'queued'
+  const isQueued = lobbyStatus?.matchmakingState === 'queued'
   const canCreatePrivateRoom = !isQueued && !isAlreadyPlaying
 
   async function handleJoinMatchmaking() {
@@ -182,7 +182,7 @@ function LobbyPage() {
             <span className={`${guestChip} max-[720px]:w-full`}>
               {isLoading
                 ? 'Loading guest…'
-                : session?.displayName ?? 'Guest created on first game'}
+                : lobbyStatus?.displayName ?? 'Guest created on first game'}
             </span>
             <Link className={`${secondaryButton} max-[720px]:min-h-[3rem] max-[720px]:px-5`} to="/about">
               Rules
@@ -191,7 +191,7 @@ function LobbyPage() {
 
           {hasActiveGame ? (
             <div className={`${infoCard} max-w-[34rem]`}>
-              Active game available. Resume as {describeRole(session?.activeRole)}.
+              Active game available. Resume as {describeRole(lobbyStatus?.activeRole)}.
             </div>
           ) : null}
         </div>

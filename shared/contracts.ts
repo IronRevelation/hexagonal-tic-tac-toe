@@ -11,10 +11,16 @@ export type GameStatus = 'waiting' | 'active' | 'finished'
 export type ParticipantRole = 'playerOne' | 'playerTwo' | 'spectator'
 export type GameFinishReason = 'line' | 'forfeit' | 'drawAgreement' | 'timeout'
 
-export type GuestSession = {
+export type GuestProfile = {
+  displayName: string
+}
+
+export type LobbyStatusSnapshot = {
   displayName: string
   activeGameId: string | null
   activeRole: ParticipantRole | null
+  matchmakingState: MatchmakingStatus['state']
+  queuedAt: number | null
 }
 
 export type RematchState = {
@@ -80,6 +86,11 @@ export type LiveGameRoomSnapshot = {
   canDeleteRoom: boolean
 }
 
+export type LiveGameSnapshot = LiveGameCoreSnapshot &
+  LiveGameRoomSnapshot & {
+    privateLobby: PrivateLobbySnapshot | null
+  }
+
 export type PresenceAccessSnapshot = {
   gameId: string
   slot: PlayerSlot
@@ -124,6 +135,12 @@ export type GameHistoryEntry = {
   finishedAt: number
   updatedAt: number
   totalMoves: number
+}
+
+export type HistoryPage = {
+  items: GameHistoryEntry[]
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 export type GameReplayMove = {

@@ -1,8 +1,7 @@
 import { v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { mutation } from './_generated/server'
 import {
   assertCanJoinAsPlayer,
-  buildGuestSession,
   chooseOpeningOrder,
   createStoredInitialState,
   findAvailableMatchmakingOpponent,
@@ -12,6 +11,7 @@ import {
   isPlayerParticipant,
   now,
   refreshDisconnectForfeit,
+  refreshGuestLiveStatus,
   requireGuest,
 } from './lib'
 import type { MatchmakingStatus } from '../shared/contracts'
@@ -29,6 +29,7 @@ export const join = mutation({
       if (existingQueueEntry) {
         await ctx.db.delete(existingQueueEntry._id)
       }
+      await refreshGuestLiveStatus(ctx.db, guest)
 
       return {
         state: 'matched',
@@ -47,6 +48,7 @@ export const join = mutation({
 
     if (!availableOpponent) {
       if (existingQueueEntry) {
+        await refreshGuestLiveStatus(ctx.db, guest)
         return {
           state: 'queued',
           queuedAt: existingQueueEntry.queuedAt,
@@ -58,6 +60,7 @@ export const join = mutation({
         guestId: guest._id,
         queuedAt,
       })
+      await refreshGuestLiveStatus(ctx.db, guest)
 
       return {
         state: 'queued',
@@ -80,15 +83,19 @@ export const join = mutation({
       mode: 'matchmaking',
       status: 'active',
       timeControl: 'unlimited',
-      turnCommitMode: 'confirmTurn',
       createdByGuestId: availableOpponent.guestId,
       playerOneGuestId: openingOrder.playerOneGuestId,
       playerTwoGuestId: openingOrder.playerTwoGuestId,
-      serializedState: createStoredInitialState(),
       startedAt: timestamp,
       updatedAt: timestamp,
       rematchRequestedByPlayerOne: false,
       rematchRequestedByPlayerTwo: false,
+    })
+    await ctx.db.insert('gameStates', {
+      gameId,
+      turnCommitMode: 'confirmTurn',
+      serializedState: createStoredInitialState(),
+      updatedAt: timestamp,
       nextDrawOfferMoveIndexPlayerOne: 0,
       nextDrawOfferMoveIndexPlayerTwo: 0,
     })
@@ -119,6 +126,16 @@ export const join = mutation({
     }
 
     await refreshDisconnectForfeit(ctx, gameId)
+    const [playerOneGuest, playerTwoGuest] = await Promise.all([
+      ctx.db.get(openingOrder.playerOneGuestId),
+      ctx.db.get(openingOrder.playerTwoGuestId),
+    ])
+    if (playerOneGuest) {
+      await refreshGuestLiveStatus(ctx.db, playerOneGuest)
+    }
+    if (playerTwoGuest) {
+      await refreshGuestLiveStatus(ctx.db, playerTwoGuest)
+    }
 
     return {
       state: 'matched',
@@ -141,40 +158,8 @@ export const cancel = mutation({
     if (queueEntry) {
       await ctx.db.delete(queueEntry._id)
     }
+    await refreshGuestLiveStatus(ctx.db, guest)
 
     return { ok: true }
-  },
-})
-
-export const status = query({
-  args: {
-    guestToken: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const guest = await getGuestByToken(ctx.db, args.guestToken)
-    if (!guest) {
-      return { state: 'idle' } satisfies MatchmakingStatus
-    }
-
-    const session = await buildGuestSession(ctx.db, guest)
-    if (
-      session.activeGameId &&
-      (session.activeRole === 'playerOne' || session.activeRole === 'playerTwo')
-    ) {
-      return {
-        state: 'matched',
-        gameId: session.activeGameId,
-      } satisfies MatchmakingStatus
-    }
-
-    const queueEntry = await getQueueEntry(ctx.db, guest._id)
-    if (!queueEntry) {
-      return { state: 'idle' } satisfies MatchmakingStatus
-    }
-
-    return {
-      state: 'queued',
-      queuedAt: queueEntry.queuedAt,
-    } satisfies MatchmakingStatus
   },
 })

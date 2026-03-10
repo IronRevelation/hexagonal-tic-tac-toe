@@ -3,10 +3,9 @@ import { internalMutation, mutation, query } from './_generated/server'
 import type { MutationCtx } from './_generated/server'
 import {
   compareHistoryEntries,
+  buildClockStateFields,
   buildHistoryEntry,
-  buildLiveGameCoreSnapshot,
-  buildLiveGameRoomSnapshot,
-  buildLivePrivateLobbySnapshot,
+  buildLiveGameSnapshot,
   buildPresenceAccessSnapshot,
   buildReplayData,
   assertValidMoveCoord,
@@ -17,19 +16,23 @@ import {
   createStoredInitialState,
   drawOfferCooldownPatch,
   DRAW_OFFER_COOLDOWN_MOVES,
+  ensureGameStateRecord,
   type GameDoc,
   getGuestByToken,
   getParticipant,
   isPlayerParticipant,
   listParticipants,
-  loadGameState,
+  loadSerializedGameState,
   normalizeGameTimeControl,
   normalizeTurnCommitMode,
   now,
   refreshClockTimeout,
   refreshDisconnectForfeit,
+  refreshGuestLiveStatus,
+  requireGameStateFields,
   requireGuest,
   requirePlayerRole,
+  resolveLobbyStatus,
   resolveTimedGameClock,
   throwGameError,
   toStoredState,
@@ -42,37 +45,27 @@ import {
 } from '../shared/hexGame'
 import { getInitialClockMs } from '../shared/timeControl'
 
+const HISTORY_PAGE_SIZE = 20
+const MAX_HISTORY_PAGE_SIZE = 50
+
 export const resumeForGuest = query({
   args: {
     guestToken: v.string(),
   },
   handler: async (ctx, args) => {
-    const guest = await getGuestByToken(ctx.db, args.guestToken)
-    if (!guest) {
+    const status = await resolveLobbyStatus(ctx.db, args.guestToken)
+    if (!status?.activeGameId || !status.activeRole) {
       return null
     }
 
-    const participations = await ctx.db
-      .query('gameParticipants')
-      .withIndex('by_guestId', (query) => query.eq('guestId', guest._id))
-      .collect()
-    const ordered = participations.sort((left, right) => right.joinedAt - left.joinedAt)
-
-    for (const participation of ordered) {
-      const game = await ctx.db.get(participation.gameId)
-      if (game && (game.status === 'waiting' || game.status === 'active')) {
-        return {
-          gameId: game._id,
-          role: participation.role,
-        }
-      }
+    return {
+      gameId: status.activeGameId,
+      role: status.activeRole,
     }
-
-    return null
   },
 })
 
-export const liveCoreByIdForGuest = query({
+export const liveByIdForGuest = query({
   args: {
     guestToken: v.string(),
     gameId: v.id('games'),
@@ -83,23 +76,8 @@ export const liveCoreByIdForGuest = query({
       return null
     }
 
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      return null
-    }
-
-    return buildLiveGameCoreSnapshot(ctx.db, guest, game)
-  },
-})
-
-export const liveRoomByIdForGuest = query({
-  args: {
-    guestToken: v.string(),
-    gameId: v.id('games'),
-  },
-  handler: async (ctx, args) => {
-    const guest = await getGuestByToken(ctx.db, args.guestToken)
-    if (!guest) {
+    const participant = await getParticipant(ctx.db, args.gameId, guest._id)
+    if (!participant) {
       return null
     }
 
@@ -108,27 +86,7 @@ export const liveRoomByIdForGuest = query({
       return null
     }
 
-    return buildLiveGameRoomSnapshot(ctx.db, guest, game)
-  },
-})
-
-export const livePrivateLobbyByIdForGuest = query({
-  args: {
-    guestToken: v.string(),
-    gameId: v.id('games'),
-  },
-  handler: async (ctx, args) => {
-    const guest = await getGuestByToken(ctx.db, args.guestToken)
-    if (!guest) {
-      return null
-    }
-
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      return null
-    }
-
-    return buildLivePrivateLobbySnapshot(ctx.db, guest, game)
+    return buildLiveGameSnapshot(ctx.db, guest, game)
   },
 })
 
@@ -152,16 +110,27 @@ export const presenceAccessByIdForGuest = query({
   },
 })
 
-export const listHistoryForGuest = query({
+export const listHistoryPageForGuest = query({
   args: {
     guestToken: v.string(),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const guest = await getGuestByToken(ctx.db, args.guestToken)
     if (!guest) {
-      return []
+      return {
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+      }
     }
 
+    const limit = Math.min(
+      MAX_HISTORY_PAGE_SIZE,
+      Math.max(1, args.limit ?? HISTORY_PAGE_SIZE),
+    )
+    const offset = decodeHistoryCursor(args.cursor)
     const participations = await ctx.db
       .query('gameParticipants')
       .withIndex('by_guestId', (query) => query.eq('guestId', guest._id))
@@ -170,20 +139,29 @@ export const listHistoryForGuest = query({
       (participant) =>
         participant.role === 'playerOne' || participant.role === 'playerTwo',
     )
-    const games = await Promise.all(
-      playerParticipations.map(async (participant) => {
-        const game = await ctx.db.get(participant.gameId)
-        if (!game || game.status !== 'finished') {
-          return null
-        }
+    const entries = (
+      await Promise.all(
+        playerParticipations.map(async (participant) => {
+          const game = await ctx.db.get(participant.gameId)
+          if (!game || game.status !== 'finished') {
+            return null
+          }
 
-        return buildHistoryEntry(ctx.db, guest._id, game, participant)
-      }),
+          return buildHistoryEntry(ctx.db, guest._id, game, participant)
+        }),
+      )
     )
-
-    return games
-      .filter((game): game is NonNullable<typeof game> => game !== null)
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
       .sort(compareHistoryEntries)
+
+    const items = entries.slice(offset, offset + limit)
+    const nextOffset = offset + items.length
+
+    return {
+      items,
+      nextCursor: nextOffset < entries.length ? encodeHistoryCursor(nextOffset) : null,
+      hasMore: nextOffset < entries.length,
+    }
   },
 })
 
@@ -223,43 +201,41 @@ export const placeMove = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      throwGameError('GAME_NOT_FOUND', 'Game not found.')
-    }
-    if (game.status !== 'active') {
-      throwGameError('GAME_FINISHED', 'This game is no longer active.')
-    }
-
+    const game = await requireActiveGame(ctx, args.gameId)
     const participant = await getParticipant(ctx.db, game._id, guest._id)
     if (!participant) {
       throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
     }
 
     const playerSlot = requirePlayerRole(participant.role)
-    if (normalizeTurnCommitMode(game) !== 'instant') {
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    if (normalizeTurnCommitMode(stateFields) !== 'instant') {
       throwGameError(
         'TURN_CONFIRM_REQUIRED',
         'This game requires confirming the full turn before submitting moves.',
       )
     }
-    const state = loadGameState(game)
+
+    const state = loadSerializedGameState(stateFields)
     const timestamp = now()
     const resolvedClock = await ensureGameHasTimeRemaining(
       ctx,
       game,
+      stateFields,
       state.currentPlayer,
       timestamp,
     )
+
     if (state.currentPlayer !== playerSlot) {
       throwGameError('NOT_YOUR_TURN', 'It is not your turn.')
     }
+
     assertValidMoveCoord(args.coord)
     if (state.board.has(coordKey(args.coord))) {
       throwGameError('CELL_OCCUPIED', 'That hexagon is already occupied.')
     }
 
-    const pendingDrawOfferedBy = game.drawOfferedBy ?? null
+    const pendingDrawOfferedBy = stateFields.drawOfferedBy ?? null
     const pendingDrawPatch =
       pendingDrawOfferedBy === null
         ? {}
@@ -270,6 +246,20 @@ export const placeMove = mutation({
     const nextState = applyMove(state, args.coord)
     const nextSerializedState = serializeGameState(nextState)
     const nextActivePlayer = nextState.winner ? null : nextState.currentPlayer
+    const statePatch = {
+      serializedState: toStoredState(nextSerializedState),
+      winnerSlot: nextState.winner ?? undefined,
+      finishReason: nextState.winner ? 'line' : undefined,
+      updatedAt: timestamp,
+      ...buildResolvedClockPatch(resolvedClock, nextActivePlayer, timestamp),
+      ...pendingDrawPatch,
+      ...(nextState.winner ? clearDrawOfferFields() : {}),
+    }
+    const gamePatch = {
+      status: nextState.winner ? ('finished' as const) : ('active' as const),
+      finishedAt: nextState.winner ? timestamp : undefined,
+      updatedAt: timestamp,
+    }
 
     await ctx.db.insert('gameMoves', {
       gameId: game._id,
@@ -281,17 +271,7 @@ export const placeMove = mutation({
       createdAt: timestamp,
     })
 
-    await ctx.db.patch(game._id, {
-      serializedState: toStoredState(nextSerializedState),
-      winnerSlot: nextState.winner ?? undefined,
-      finishReason: nextState.winner ? 'line' : undefined,
-      status: nextState.winner ? 'finished' : 'active',
-      finishedAt: nextState.winner ? timestamp : undefined,
-      updatedAt: timestamp,
-      ...buildResolvedClockPatch(resolvedClock, nextActivePlayer, timestamp),
-      ...pendingDrawPatch,
-      ...(nextState.winner ? clearDrawOfferFields() : {}),
-    })
+    await patchGameAndState(ctx, game, gamePatch, statePatch)
 
     if (normalizeGameTimeControl(game) !== 'unlimited') {
       await refreshClockTimeout(
@@ -308,6 +288,9 @@ export const placeMove = mutation({
     }
 
     await refreshDisconnectForfeit(ctx, game._id)
+    if (nextState.winner) {
+      await refreshGameParticipantStatuses(ctx, game._id)
+    }
 
     return {
       ok: true,
@@ -329,15 +312,10 @@ export const confirmTurn = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      throwGameError('GAME_NOT_FOUND', 'Game not found.')
-    }
-    if (game.status !== 'active') {
-      throwGameError('GAME_FINISHED', 'This game is no longer active.')
-    }
+    const game = await requireActiveGame(ctx, args.gameId)
+    const stateFields = await requireGameStateFields(ctx.db, game)
 
-    if (normalizeTurnCommitMode(game) !== 'confirmTurn') {
+    if (normalizeTurnCommitMode(stateFields) !== 'confirmTurn') {
       throwGameError(
         'INSTANT_MOVE_GAME',
         'This game submits moves immediately and does not support turn confirmation.',
@@ -350,14 +328,16 @@ export const confirmTurn = mutation({
     }
 
     const playerSlot = requirePlayerRole(participant.role)
-    const state = loadGameState(game)
+    const state = loadSerializedGameState(stateFields)
     const timestamp = now()
     const resolvedClock = await ensureGameHasTimeRemaining(
       ctx,
       game,
+      stateFields,
       state.currentPlayer,
       timestamp,
     )
+
     if (state.currentPlayer !== playerSlot) {
       throwGameError('NOT_YOUR_TURN', 'It is not your turn.')
     }
@@ -383,7 +363,7 @@ export const confirmTurn = mutation({
       occupiedKeys.add(key)
     }
 
-    const pendingDrawOfferedBy = game.drawOfferedBy ?? null
+    const pendingDrawOfferedBy = stateFields.drawOfferedBy ?? null
     const pendingDrawPatch =
       pendingDrawOfferedBy === null
         ? {}
@@ -394,6 +374,20 @@ export const confirmTurn = mutation({
     const nextState = applyConfirmedTurn(state, args.coords)
     const nextSerializedState = serializeGameState(nextState)
     const nextActivePlayer = nextState.winner ? null : nextState.currentPlayer
+    const statePatch = {
+      serializedState: toStoredState(nextSerializedState),
+      winnerSlot: nextState.winner ?? undefined,
+      finishReason: nextState.winner ? 'line' : undefined,
+      updatedAt: timestamp,
+      ...buildResolvedClockPatch(resolvedClock, nextActivePlayer, timestamp),
+      ...pendingDrawPatch,
+      ...(nextState.winner ? clearDrawOfferFields() : {}),
+    }
+    const gamePatch = {
+      status: nextState.winner ? ('finished' as const) : ('active' as const),
+      finishedAt: nextState.winner ? timestamp : undefined,
+      updatedAt: timestamp,
+    }
 
     for (const [index, coord] of args.coords.entries()) {
       await ctx.db.insert('gameMoves', {
@@ -407,17 +401,7 @@ export const confirmTurn = mutation({
       })
     }
 
-    await ctx.db.patch(game._id, {
-      serializedState: toStoredState(nextSerializedState),
-      winnerSlot: nextState.winner ?? undefined,
-      finishReason: nextState.winner ? 'line' : undefined,
-      status: nextState.winner ? 'finished' : 'active',
-      finishedAt: nextState.winner ? timestamp : undefined,
-      updatedAt: timestamp,
-      ...buildResolvedClockPatch(resolvedClock, nextActivePlayer, timestamp),
-      ...pendingDrawPatch,
-      ...(nextState.winner ? clearDrawOfferFields() : {}),
-    })
+    await patchGameAndState(ctx, game, gamePatch, statePatch)
 
     if (normalizeGameTimeControl(game) !== 'unlimited') {
       await refreshClockTimeout(
@@ -434,6 +418,9 @@ export const confirmTurn = mutation({
     }
 
     await refreshDisconnectForfeit(ctx, game._id)
+    if (nextState.winner) {
+      await refreshGameParticipantStatuses(ctx, game._id)
+    }
 
     return {
       ok: true,
@@ -449,14 +436,7 @@ export const forfeitGame = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      throwGameError('GAME_NOT_FOUND', 'Game not found.')
-    }
-    if (game.status !== 'active') {
-      throwGameError('GAME_FINISHED', 'This game is no longer active.')
-    }
-
+    const game = await requireActiveGame(ctx, args.gameId)
     const participant = await getParticipant(ctx.db, game._id, guest._id)
     if (!participant) {
       throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
@@ -464,24 +444,37 @@ export const forfeitGame = mutation({
 
     const slot = requirePlayerRole(participant.role)
     const timestamp = now()
-    const state = loadGameState(game)
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    const state = loadSerializedGameState(stateFields)
     const resolvedClock = await ensureGameHasTimeRemaining(
       ctx,
       game,
+      stateFields,
       state.currentPlayer,
       timestamp,
     )
-
-    await ctx.db.patch(game._id, {
+    const patch = {
       ...buildForfeitGamePatch(slot, timestamp),
       ...buildResolvedClockPatch(resolvedClock, null, timestamp),
-    })
+    }
+
+    await patchGameAndState(
+      ctx,
+      game,
+      {
+        status: 'finished',
+        finishedAt: timestamp,
+        updatedAt: timestamp,
+      },
+      patch,
+    )
 
     if (normalizeGameTimeControl(game) !== 'unlimited') {
       await refreshClockTimeout(ctx, game, null)
     }
 
     await refreshDisconnectForfeit(ctx, game._id)
+    await refreshGameParticipantStatuses(ctx, game._id)
 
     return { ok: true }
   },
@@ -500,13 +493,19 @@ export const timeoutActivePlayer = internalMutation({
     if (normalizeGameTimeControl(game) === 'unlimited') {
       return { ok: true }
     }
-    if ((game.clockTimeoutGeneration ?? 0) !== args.generation) {
+
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    if ((stateFields.clockTimeoutGeneration ?? 0) !== args.generation) {
       return { ok: true }
     }
 
     const timestamp = now()
-    const state = loadGameState(game)
-    const resolvedClock = resolveTimedGameClock(game, state.currentPlayer, timestamp)
+    const state = loadSerializedGameState(stateFields)
+    const resolvedClock = resolveTimedGameClock(
+      buildClockStateFields(game, stateFields),
+      state.currentPlayer,
+      timestamp,
+    )
 
     if (!resolvedClock || resolvedClock.activePlayer === null) {
       return { ok: true }
@@ -515,16 +514,24 @@ export const timeoutActivePlayer = internalMutation({
       return { ok: true }
     }
 
-    await ctx.db.patch(
-      game._id,
-      buildTimeoutGamePatch(
-        resolvedClock.activePlayer,
-        timestamp,
-        resolvedClock.remainingMs,
-      ),
+    const patch = buildTimeoutGamePatch(
+      resolvedClock.activePlayer,
+      timestamp,
+      resolvedClock.remainingMs,
+    )
+    await patchGameAndState(
+      ctx,
+      game,
+      {
+        status: 'finished',
+        finishedAt: timestamp,
+        updatedAt: timestamp,
+      },
+      patch,
     )
 
     await refreshDisconnectForfeit(ctx, game._id)
+    await refreshGameParticipantStatuses(ctx, game._id)
 
     return { ok: true }
   },
@@ -537,14 +544,9 @@ export const offerDraw = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      throwGameError('GAME_NOT_FOUND', 'Game not found.')
-    }
-    if (game.status !== 'active') {
-      throwGameError('GAME_FINISHED', 'This game is no longer active.')
-    }
-    if (game.drawOfferedBy) {
+    const game = await requireActiveGame(ctx, args.gameId)
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    if (stateFields.drawOfferedBy) {
       throwGameError('DRAW_ALREADY_PENDING', 'A draw offer is already pending.')
     }
 
@@ -554,13 +556,19 @@ export const offerDraw = mutation({
     }
 
     const slot = requirePlayerRole(participant.role)
-    const state = loadGameState(game)
+    const state = loadSerializedGameState(stateFields)
     const timestamp = now()
-    await ensureGameHasTimeRemaining(ctx, game, state.currentPlayer, timestamp)
+    await ensureGameHasTimeRemaining(
+      ctx,
+      game,
+      stateFields,
+      state.currentPlayer,
+      timestamp,
+    )
     const minMoveIndex =
       slot === 'one'
-        ? game.nextDrawOfferMoveIndexPlayerOne ?? 0
-        : game.nextDrawOfferMoveIndexPlayerTwo ?? 0
+        ? stateFields.nextDrawOfferMoveIndexPlayerOne ?? 0
+        : stateFields.nextDrawOfferMoveIndexPlayerTwo ?? 0
 
     if (state.totalMoves < minMoveIndex) {
       throwGameError(
@@ -569,11 +577,18 @@ export const offerDraw = mutation({
       )
     }
 
-    await ctx.db.patch(game._id, {
-      drawOfferedBy: slot,
-      drawOfferedAtMoveIndex: state.totalMoves,
-      updatedAt: timestamp,
-    })
+    await patchGameAndState(
+      ctx,
+      game,
+      {
+        updatedAt: timestamp,
+      },
+      {
+        drawOfferedBy: slot,
+        drawOfferedAtMoveIndex: state.totalMoves,
+        updatedAt: timestamp,
+      },
+    )
 
     if (normalizeGameTimeControl(game) !== 'unlimited') {
       await refreshClockTimeout(ctx, game, null)
@@ -590,14 +605,9 @@ export const acceptDraw = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      throwGameError('GAME_NOT_FOUND', 'Game not found.')
-    }
-    if (game.status !== 'active') {
-      throwGameError('GAME_FINISHED', 'This game is no longer active.')
-    }
-    if (!game.drawOfferedBy) {
+    const game = await requireActiveGame(ctx, args.gameId)
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    if (!stateFields.drawOfferedBy) {
       throwGameError('DRAW_NOT_PENDING', 'There is no pending draw offer.')
     }
 
@@ -607,29 +617,38 @@ export const acceptDraw = mutation({
     }
 
     const slot = requirePlayerRole(participant.role)
-    if (game.drawOfferedBy === slot) {
+    if (stateFields.drawOfferedBy === slot) {
       throwGameError('DRAW_NOT_ALLOWED', 'You cannot accept your own draw offer.')
     }
 
     const timestamp = now()
-    const state = loadGameState(game)
+    const state = loadSerializedGameState(stateFields)
     const resolvedClock = await ensureGameHasTimeRemaining(
       ctx,
       game,
+      stateFields,
       state.currentPlayer,
       timestamp,
     )
-    await ctx.db.patch(game._id, {
-      winnerSlot: undefined,
-      finishReason: 'drawAgreement',
-      status: 'finished',
-      finishedAt: timestamp,
-      updatedAt: timestamp,
-      ...buildResolvedClockPatch(resolvedClock, null, timestamp),
-      ...clearDrawOfferFields(),
-    })
+    await patchGameAndState(
+      ctx,
+      game,
+      {
+        status: 'finished',
+        finishedAt: timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        winnerSlot: undefined,
+        finishReason: 'drawAgreement',
+        updatedAt: timestamp,
+        ...buildResolvedClockPatch(resolvedClock, null, timestamp),
+        ...clearDrawOfferFields(),
+      },
+    )
 
     await refreshDisconnectForfeit(ctx, game._id)
+    await refreshGameParticipantStatuses(ctx, game._id)
 
     return { ok: true }
   },
@@ -642,14 +661,9 @@ export const declineDraw = mutation({
   },
   handler: async (ctx, args) => {
     const guest = await requireGuest(ctx.db, args.guestToken)
-    const game = await ctx.db.get(args.gameId)
-    if (!game) {
-      throwGameError('GAME_NOT_FOUND', 'Game not found.')
-    }
-    if (game.status !== 'active') {
-      throwGameError('GAME_FINISHED', 'This game is no longer active.')
-    }
-    if (!game.drawOfferedBy) {
+    const game = await requireActiveGame(ctx, args.gameId)
+    const stateFields = await requireGameStateFields(ctx.db, game)
+    if (!stateFields.drawOfferedBy) {
       throwGameError('DRAW_NOT_PENDING', 'There is no pending draw offer.')
     }
 
@@ -659,18 +673,31 @@ export const declineDraw = mutation({
     }
 
     const slot = requirePlayerRole(participant.role)
-    if (game.drawOfferedBy === slot) {
+    if (stateFields.drawOfferedBy === slot) {
       throwGameError('DRAW_NOT_ALLOWED', 'You cannot decline your own draw offer.')
     }
 
-    const state = loadGameState(game)
+    const state = loadSerializedGameState(stateFields)
     const timestamp = now()
-    await ensureGameHasTimeRemaining(ctx, game, state.currentPlayer, timestamp)
-    await ctx.db.patch(game._id, {
-      updatedAt: timestamp,
-      ...clearDrawOfferFields(),
-      ...drawOfferCooldownPatch(game.drawOfferedBy, state.totalMoves),
-    })
+    await ensureGameHasTimeRemaining(
+      ctx,
+      game,
+      stateFields,
+      state.currentPlayer,
+      timestamp,
+    )
+    await patchGameAndState(
+      ctx,
+      game,
+      {
+        updatedAt: timestamp,
+      },
+      {
+        updatedAt: timestamp,
+        ...clearDrawOfferFields(),
+        ...drawOfferCooldownPatch(stateFields.drawOfferedBy, state.totalMoves),
+      },
+    )
 
     return { ok: true }
   },
@@ -698,13 +725,13 @@ export const requestRematch = mutation({
     if (!participant) {
       throwGameError('NOT_A_PLAYER', 'You are not part of this game.')
     }
+
     const slot = requirePlayerRole(participant.role)
     const isPlayerOne = slot === 'one'
-    const requestedByPlayerOne =
-      game.rematchRequestedByPlayerOne || isPlayerOne
-    const requestedByPlayerTwo =
-      game.rematchRequestedByPlayerTwo || !isPlayerOne
+    const requestedByPlayerOne = game.rematchRequestedByPlayerOne || isPlayerOne
+    const requestedByPlayerTwo = game.rematchRequestedByPlayerTwo || !isPlayerOne
     const timestamp = now()
+    const stateFields = await requireGameStateFields(ctx.db, game)
     const initialClockMs = getInitialClockMs(normalizeGameTimeControl(game))
 
     if (!requestedByPlayerOne || !requestedByPlayerTwo) {
@@ -727,21 +754,24 @@ export const requestRematch = mutation({
       mode: game.mode,
       status: 'active',
       timeControl: normalizeGameTimeControl(game),
-      turnCommitMode: normalizeTurnCommitMode(game),
       roomCode: game.mode === 'private' ? game.roomCode : undefined,
       createdByGuestId: game.createdByGuestId,
       playerOneGuestId: game.playerTwoGuestId,
       playerTwoGuestId: game.playerOneGuestId,
-      playerOneTimeRemainingMs: initialClockMs ?? undefined,
-      playerTwoTimeRemainingMs: initialClockMs ?? undefined,
-      turnStartedAt: undefined,
-      serializedState: createStoredInitialState(),
       startedAt: timestamp,
       updatedAt: timestamp,
       seriesId: game.seriesId ?? game._id,
       previousGameId: game._id,
       rematchRequestedByPlayerOne: false,
       rematchRequestedByPlayerTwo: false,
+    })
+    await ctx.db.insert('gameStates', {
+      gameId: nextGameId,
+      turnCommitMode: normalizeTurnCommitMode(stateFields),
+      serializedState: createStoredInitialState(),
+      playerOneTimeRemainingMs: initialClockMs ?? undefined,
+      playerTwoTimeRemainingMs: initialClockMs ?? undefined,
+      updatedAt: timestamp,
       nextDrawOfferMoveIndexPlayerOne: 0,
       nextDrawOfferMoveIndexPlayerTwo: 0,
     })
@@ -798,6 +828,8 @@ export const requestRematch = mutation({
     }
 
     await refreshDisconnectForfeit(ctx, nextGameId)
+    await refreshGameParticipantStatuses(ctx, game._id)
+    await refreshGameParticipantStatuses(ctx, nextGameId)
 
     return {
       nextGameId,
@@ -838,31 +870,133 @@ export const cancelRematch = mutation({
   },
 })
 
+async function requireActiveGame(
+  ctx: Pick<MutationCtx, 'db'>,
+  gameId: GameDoc['_id'],
+) {
+  const game = await ctx.db.get(gameId)
+  if (!game) {
+    throwGameError('GAME_NOT_FOUND', 'Game not found.')
+  }
+  if (game.status !== 'active') {
+    throwGameError('GAME_FINISHED', 'This game is no longer active.')
+  }
+
+  return game
+}
+
+async function patchGameAndState(
+  ctx: Pick<MutationCtx, 'db'>,
+  game: GameDoc,
+  gamePatch: Record<string, any>,
+  statePatch: Record<string, any>,
+) {
+  const stateRecord = await ensureGameStateRecord(ctx.db, game)
+  const persistedStatePatch = toPersistedGameStatePatch(
+    statePatch,
+    stateRecord,
+    stateRecord.turnCommitMode ?? game.turnCommitMode ?? 'instant',
+  )
+  await Promise.all([
+    ctx.db.patch(game._id, gamePatch),
+    ctx.db.patch(stateRecord._id, persistedStatePatch),
+  ])
+}
+
+async function refreshGameParticipantStatuses(
+  ctx: Pick<MutationCtx, 'db'>,
+  gameId: GameDoc['_id'],
+) {
+  const participants = await listParticipants(ctx.db, gameId)
+  const uniqueGuestIds = Array.from(new Set(participants.map((participant) => participant.guestId)))
+  const guests = await Promise.all(uniqueGuestIds.map((guestId) => ctx.db.get(guestId)))
+
+  for (const guest of guests) {
+    if (!guest) {
+      continue
+    }
+
+    await refreshGuestLiveStatus(ctx.db, guest)
+  }
+}
+
 async function ensureGameHasTimeRemaining(
   ctx: MutationCtx,
   game: GameDoc,
+  stateFields: Awaited<ReturnType<typeof requireGameStateFields>>,
   currentPlayer: 'one' | 'two',
   timestamp: number,
 ) {
-  const resolvedClock = resolveTimedGameClock(game, currentPlayer, timestamp)
+  const resolvedClock = resolveTimedGameClock(
+    buildClockStateFields(game, stateFields),
+    currentPlayer,
+    timestamp,
+  )
 
   if (
     resolvedClock &&
     resolvedClock.activePlayer !== null &&
     resolvedClock.remainingMs[resolvedClock.activePlayer] <= 0
   ) {
-    await ctx.db.patch(
-      game._id,
-      buildTimeoutGamePatch(
-        resolvedClock.activePlayer,
-        timestamp,
-        resolvedClock.remainingMs,
-      ),
+    const patch = buildTimeoutGamePatch(
+      resolvedClock.activePlayer,
+      timestamp,
+      resolvedClock.remainingMs,
+    )
+    await patchGameAndState(
+      ctx,
+      game,
+      {
+        status: 'finished',
+        finishedAt: timestamp,
+        updatedAt: timestamp,
+      },
+      patch,
     )
     await refreshClockTimeout(ctx, game, null)
     await refreshDisconnectForfeit(ctx, game._id)
+    await refreshGameParticipantStatuses(ctx, game._id)
     throwGameError('GAME_FINISHED', 'This game ended on time.')
   }
 
   return resolvedClock
+}
+
+function decodeHistoryCursor(cursor: string | undefined) {
+  if (!cursor) {
+    return 0
+  }
+
+  const parsed = Number(cursor)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0
+}
+
+function encodeHistoryCursor(offset: number) {
+  return String(offset)
+}
+
+function toPersistedGameStatePatch(
+  statePatch: Record<string, any>,
+  stateRecord: {
+    serializedState: GameDoc['serializedState']
+    updatedAt: number
+  },
+  turnCommitMode: 'instant' | 'confirmTurn',
+) {
+  return {
+    serializedState: statePatch.serializedState ?? stateRecord.serializedState,
+    winnerSlot: statePatch.winnerSlot,
+    finishReason: statePatch.finishReason,
+    turnCommitMode: statePatch.turnCommitMode ?? turnCommitMode,
+    playerOneTimeRemainingMs: statePatch.playerOneTimeRemainingMs,
+    playerTwoTimeRemainingMs: statePatch.playerTwoTimeRemainingMs,
+    turnStartedAt: statePatch.turnStartedAt,
+    clockTimeoutGeneration: statePatch.clockTimeoutGeneration,
+    clockTimeoutJobId: statePatch.clockTimeoutJobId,
+    drawOfferedBy: statePatch.drawOfferedBy,
+    drawOfferedAtMoveIndex: statePatch.drawOfferedAtMoveIndex,
+    nextDrawOfferMoveIndexPlayerOne: statePatch.nextDrawOfferMoveIndexPlayerOne,
+    nextDrawOfferMoveIndexPlayerTwo: statePatch.nextDrawOfferMoveIndexPlayerTwo,
+    updatedAt: statePatch.updatedAt ?? stateRecord.updatedAt,
+  }
 }
